@@ -209,8 +209,12 @@ async function saveUser(user) {
     return created.toObject()
   }
 
-  users.set(user.email, user)
-  return user
+  const userWithId = {
+    ...user,
+    id: user.id || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  }
+  users.set(user.email, userWithId)
+  return userWithId
 }
 
 function toUserResponse(user) {
