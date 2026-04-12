@@ -1,0 +1,28 @@
+plugins = []
+headers = []
+redirects = []
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "c:\\Users\\ASUS\\EduTrack\\frontend\\dist"
+publishOrigin = "ui"
+commandOrigin = "ui"
+base = "c:\\Users\\ASUS\\EduTrack\\frontend"
+command = "npm run build"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
