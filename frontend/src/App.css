@@ -1453,6 +1453,55 @@ main.dashboard-main {
   animation: modal-in 180ms ease;
 }
 
+.ai-command-panel {
+  background: linear-gradient(170deg, #ffffff 0%, #f8fbff 52%, #eef6ff 100%);
+  border-color: #cfe3ff;
+}
+
+.ai-insight-grid {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.ai-insight-card {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ai-insight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ai-insight-head strong {
+  font-size: 0.84rem;
+}
+
+.ai-insight-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.ai-command-actions {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.ai-command-actions .button {
+  width: 100%;
+}
+
 .notification-head {
   display: flex;
   align-items: center;

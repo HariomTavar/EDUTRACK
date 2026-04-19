@@ -2614,6 +2614,11 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   }
 
   const handleCreateAiAnnouncementDraft = () => {
+    if (user.role !== 'teacher') {
+      setActivePage('communication')
+      return
+    }
+
     const topInsight = effectiveAiInsights[0]
     const fallbackTitle = user.role === 'teacher' ? 'Weekly Learning Focus' : 'Learning Update'
     const fallbackMessage = user.role === 'teacher'
