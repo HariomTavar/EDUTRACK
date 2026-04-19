@@ -565,7 +565,6 @@ function App() {
               <button className="button button-dark" type="button" onClick={() => openAuth('signup')}>
                 Get Started
               </button>
-              <a className="button button-secondary" href="#features">Learn More</a>
               <button
                 className="button button-secondary login-icon-button"
                 type="button"
@@ -580,6 +579,7 @@ function App() {
                 </span>
                 <span className="login-text">Login</span>
               </button>
+              <a className="button button-secondary" href="#features">Learn More</a>
             </div>
             <div className="hero-tags" aria-label="Platform highlights">
               <span className="hero-tag float-soft">Project Tracking</span>
@@ -2860,19 +2860,35 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
             <h3>Highlights</h3>
           </div>
           <div className="highlight-grid">
-            {(pageData?.highlights || []).map((item, index) => (
-              <div className="highlight-card rich-highlight-card" key={item.title}>
-                <div className="highlight-meta-row">
-                  <span>{item.title}</span>
-                  <em className={`highlight-dot dot-${index % 3}`}></em>
+            {(pageData?.highlights || []).length > 0 ? (
+              (pageData?.highlights || []).map((item, index) => (
+                <div className="highlight-card rich-highlight-card" key={item.title}>
+                  <div className="highlight-meta-row">
+                    <span>{item.title}</span>
+                    <em className={`highlight-dot dot-${index % 3}`}></em>
+                  </div>
+                  <strong>{item.value}</strong>
+                  <div className="mini-progress-track">
+                    <span style={{ width: `${inferPercentFromValue(item.value, index)}%` }}></span>
+                  </div>
+                  <small>{index % 2 === 0 ? 'On track this week' : 'Improving trend'}</small>
                 </div>
-                <strong>{item.value}</strong>
-                <div className="mini-progress-track">
-                  <span style={{ width: `${inferPercentFromValue(item.value, index)}%` }}></span>
+              ))
+            ) : (
+              stableTopStats.slice(0, 2).map((item, index) => (
+                <div className="highlight-card rich-highlight-card" key={`fallback-highlight-${item.title}`}>
+                  <div className="highlight-meta-row">
+                    <span>{item.title}</span>
+                    <em className={`highlight-dot dot-${index % 3}`}></em>
+                  </div>
+                  <strong>{item.value}</strong>
+                  <div className="mini-progress-track">
+                    <span style={{ width: `${inferPercentFromValue(item.value, index)}%` }}></span>
+                  </div>
+                  <small>Live dashboard metric</small>
                 </div>
-                <small>{index % 2 === 0 ? 'On track this week' : 'Improving trend'}</small>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </article>
 
@@ -2881,21 +2897,31 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
             <h3>Overview</h3>
           </div>
           <div className="overview-cards">
-            {(pageData?.overview || []).map((item, index) => (
-              <div className={`overview-card ${item.tone} rich-overview-card`} key={item.title}>
-                <div className="overview-top-row">
-                  <span className="overview-icon">{['◉', '◎', '◌', '◍'][index % 4]}</span>
-                  <span className="overview-chip">{index % 2 === 0 ? 'Stable' : 'Focus'}</span>
+            {(pageData?.overview || []).length > 0 ? (
+              (pageData?.overview || []).map((item, index) => (
+                <div className={`overview-card ${item.tone} rich-overview-card`} key={item.title}>
+                  <div className="overview-top-row">
+                    <span className="overview-icon">{['◉', '◎', '◌', '◍'][index % 4]}</span>
+                    <span className="overview-chip">{index % 2 === 0 ? 'Stable' : 'Focus'}</span>
+                  </div>
+                  <strong>{item.value}</strong>
+                  <p>{item.detail}</p>
+                  <div className="overview-bars">
+                    {[28, 45, 36, 58, 42, 65].map((height, barIndex) => (
+                      <span key={`${item.title}-${barIndex}`} style={{ height: `${height + ((index * 5) % 12)}%` }}></span>
+                    ))}
+                  </div>
                 </div>
-                <strong>{item.value}</strong>
-                <p>{item.detail}</p>
-                <div className="overview-bars">
-                  {[28, 45, 36, 58, 42, 65].map((height, barIndex) => (
-                    <span key={`${item.title}-${barIndex}`} style={{ height: `${height + ((index * 5) % 12)}%` }}></span>
-                  ))}
+              ))
+            ) : (
+              <div className="dashboard-list-item" style={{ gridColumn: '1 / -1' }}>
+                <div>
+                  <h4>Overview building live</h4>
+                  <p>Create attendance, assignments, and communication updates to unlock a richer overview board.</p>
                 </div>
+                <button className="panel-add" type="button" onClick={() => setActivePage('attendance')}>Open Attendance</button>
               </div>
-            ))}
+            )}
           </div>
         </article>
       </div>
@@ -3032,15 +3058,27 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
             <h3>Platform Modules</h3>
           </div>
           <div className="dashboard-list">
-            {(pageData?.moduleBoard || []).map((item) => (
-              <div className="dashboard-list-item" key={item.title}>
-                <div>
-                  <h4>{item.title}</h4>
-                  <p>{item.detail}</p>
+            {(pageData?.moduleBoard || []).length > 0 ? (
+              (pageData?.moduleBoard || []).map((item) => (
+                <div className="dashboard-list-item" key={item.title}>
+                  <div>
+                    <h4>{item.title}</h4>
+                    <p>{item.detail}</p>
+                  </div>
+                  <span className="pill progress">{item.status}</span>
                 </div>
-                <span className="pill progress">{item.status}</span>
-              </div>
-            ))}
+              ))
+            ) : (
+              ['Course Control', 'Attendance Engine', 'Communication Hub'].map((item) => (
+                <div className="dashboard-list-item" key={item}>
+                  <div>
+                    <h4>{item}</h4>
+                    <p>Ready to use with live class data and updates.</p>
+                  </div>
+                  <span className="pill progress">active</span>
+                </div>
+              ))
+            )}
           </div>
         </article>
 
@@ -3049,15 +3087,31 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
             <h3>Smart Features + AI</h3>
           </div>
           <div className="dashboard-list">
-            {(pageData?.smartFeatureBoard || []).map((item) => (
-              <div className="dashboard-list-item" key={item.title}>
-                <div>
-                  <h4>{item.title}</h4>
-                  <p>{item.detail}</p>
+            {(pageData?.smartFeatureBoard || []).length > 0 ? (
+              (pageData?.smartFeatureBoard || []).map((item) => (
+                <div className="dashboard-list-item" key={item.title}>
+                  <div>
+                    <h4>{item.title}</h4>
+                    <p>{item.detail}</p>
+                  </div>
+                  <span className={`pill ${item.status === 'ai-live' || item.status === 'active' ? 'progress' : 'pending'}`}>{item.status}</span>
                 </div>
-                <span className={`pill ${item.status === 'ai-live' || item.status === 'active' ? 'progress' : 'pending'}`}>{item.status}</span>
-              </div>
-            ))}
+              ))
+            ) : (
+              [
+                { title: 'AI Attendance Signals', detail: 'Automatic attention flags for low-attendance trends.', status: 'ai-live' },
+                { title: 'Smart Message Drafts', detail: 'One-click announcement templates from AI insights.', status: 'active' },
+                { title: 'Adaptive Course Pulse', detail: 'Live course risk overview based on attendance and submissions.', status: 'active' },
+              ].map((item) => (
+                <div className="dashboard-list-item" key={item.title}>
+                  <div>
+                    <h4>{item.title}</h4>
+                    <p>{item.detail}</p>
+                  </div>
+                  <span className={`pill ${item.status === 'ai-live' || item.status === 'active' ? 'progress' : 'pending'}`}>{item.status}</span>
+                </div>
+              ))
+            )}
           </div>
         </article>
       </div>
