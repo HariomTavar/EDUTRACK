@@ -5,6 +5,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD 
 const TOKEN_KEY = 'edutrack_token'
 const USER_KEY = 'edutrack_user'
 const THEME_KEY = 'edutrack_theme'
+const AUTH_REQUEST_TIMEOUT_MS = 12000
 
 const normalizeRole = (value) => (value === 'teacher' ? 'teacher' : 'student')
 const gradeScoreMap = { 'A': 10, 'A-': 9, 'B+': 8, 'B': 7, 'B-': 6, 'C': 5, 'F': 0 }
@@ -334,6 +335,34 @@ function App() {
     setSession({ token: data.token, user: normalizedUser })
   }
 
+  const fetchAuthJson = async (url, options = {}) => {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      })
+
+      let data = {}
+      try {
+        data = await response.json()
+      } catch {
+        data = {}
+      }
+
+      return { response, data }
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error('Request timed out. Check backend server (http://localhost:5000) and try again.')
+      }
+      throw error
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+  }
+
   const handleAuthSubmit = async (event) => {
     event.preventDefault()
     setAuthError('')
@@ -347,12 +376,11 @@ function App() {
         : { email: formData.email, password: formData.password }
 
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const { response, data } = await fetchAuthJson(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      const data = await response.json()
 
       if (!response.ok) {
         throw new Error(data.message || 'Authentication failed')
@@ -372,11 +400,10 @@ function App() {
     setAuthLoading(true)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+      const { response, data } = await fetchAuthJson(`${API_BASE_URL}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
-      const data = await response.json()
 
       if (!response.ok) {
         throw new Error(data.message || 'Google verification failed')
