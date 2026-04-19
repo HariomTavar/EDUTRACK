@@ -819,6 +819,8 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   const [notificationItems, setNotificationItems] = useState([])
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [lastQuickAction, setLastQuickAction] = useState('')
+  const [aiActionState, setAiActionState] = useState({ loading: false, error: '', success: '' })
+  const [liveAiInsights, setLiveAiInsights] = useState([])
   const [profileData, setProfileData] = useState(() => buildProfileFromUser(user))
   const [editingProfile, setEditingProfile] = useState(false)
   const [formData, setFormData] = useState(() => buildProfileFromUser(user))
@@ -1540,6 +1542,91 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     }
   }
 
+  const handleSyncAllStudentsToClass = async () => {
+    if (!selectedTeacherClass?._id) {
+      return
+    }
+
+    setRosterActionState({ loading: true, error: '', success: '' })
+    try {
+      const syncAllResponse = await fetch(`${API_BASE_URL}/api/classes/${selectedTeacherClass._id}/students/sync-all`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+
+      const syncAllResult = await parseJsonResponse(syncAllResponse)
+      if (syncAllResponse.ok) {
+        setRosterActionState({ loading: false, error: '', success: syncAllResult.message || 'Students synced successfully' })
+        await refreshAllData()
+        return
+      }
+
+      const syncAliasResponse = await fetch(`${API_BASE_URL}/api/classes/${selectedTeacherClass._id}/students/sync`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      const syncAliasResult = await parseJsonResponse(syncAliasResponse)
+      if (syncAliasResponse.ok) {
+        setRosterActionState({ loading: false, error: '', success: syncAliasResult.message || 'Students synced successfully' })
+        await refreshAllData()
+        return
+      }
+
+      const existingEmails = new Set(
+        (selectedTeacherClass.students || [])
+          .map((student) => String(student?.email || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+
+      const candidateEmails = Array.from(new Set(
+        classesData
+          .flatMap((cls) => cls?.students || [])
+          .map((student) => String(student?.email || '').trim().toLowerCase())
+          .filter(Boolean)
+      )).filter((email) => !existingEmails.has(email))
+
+      if (candidateEmails.length === 0) {
+        const rawMessage = String(syncAllResult?.message || syncAliasResult?.message || '')
+        if (rawMessage.includes('Cannot POST')) {
+          throw new Error('Sync route is not active on backend. Restart backend server once and try again.')
+        }
+        throw new Error(syncAllResult?.message || syncAliasResult?.message || 'No student data found to sync')
+      }
+
+      const fallbackResults = await Promise.allSettled(
+        candidateEmails.map(async (studentEmail) => {
+          const response = await fetch(`${API_BASE_URL}/api/classes/${selectedTeacherClass._id}/students`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ studentEmail }),
+          })
+          return response.ok
+        })
+      )
+
+      const addedCount = fallbackResults.filter((entry) => entry.status === 'fulfilled' && entry.value).length
+      if (addedCount === 0) {
+        throw new Error('Could not sync students automatically for this course')
+      }
+
+      setRosterActionState({
+        loading: false,
+        error: '',
+        success: `Synced ${addedCount} students into this course`,
+      })
+      await refreshAllData()
+    } catch (error) {
+      setRosterActionState({ loading: false, error: error.message || 'Failed to sync students for this class', success: '' })
+    }
+  }
+
   const handleSendClassChat = async (event) => {
     event.preventDefault()
     if (!selectedTeacherClass?._id || !chatForm.message.trim()) {
@@ -1725,7 +1812,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         throw new Error(result.message || 'Failed to create class')
       }
 
-      setClassesData((current) => [result, ...current])
+      setSelectedClassId(result._id || '')
       setActionSuccess('Class created successfully')
       await refreshAllData()
     } catch (error) {
@@ -2450,6 +2537,101 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     ]
   }, [pageData?.stats, user.role, classesData, assignmentsData, attendanceOverview.rate, gradeOverview.average])
 
+  const generatedHeuristicInsights = useMemo(() => {
+    const insights = []
+
+    if (attendanceOverview.rate < 75) {
+      insights.push({
+        title: 'Attendance Risk Detected',
+        detail: `Current attendance is ${attendanceOverview.rate}%. Schedule a reminder announcement for low-attendance students.`,
+        severity: 'attention',
+      })
+    } else {
+      insights.push({
+        title: 'Attendance Trend Healthy',
+        detail: `Attendance is stable at ${attendanceOverview.rate}%. Keep weekly consistency reminders running.`,
+        severity: 'good',
+      })
+    }
+
+    if (assignmentsData.length > 0) {
+      const totalSubmissions = assignmentsData.reduce((sum, assignment) => sum + (assignment?.submissions?.length || 0), 0)
+      insights.push({
+        title: 'Submission Pulse',
+        detail: `${totalSubmissions} submissions tracked across ${assignmentsData.length} assignments.`,
+        severity: totalSubmissions === 0 ? 'attention' : 'info',
+      })
+    }
+
+    if (user.role === 'teacher' && courseDashboardRows.length > 0) {
+      const weakestCourse = [...courseDashboardRows].sort((left, right) => left.classAttendanceRate - right.classAttendanceRate)[0]
+      insights.push({
+        title: 'Course Priority',
+        detail: `${weakestCourse.subject} is at ${weakestCourse.classAttendanceRate}% attendance and needs intervention.`,
+        severity: 'attention',
+      })
+    }
+
+    return insights.slice(0, 4)
+  }, [attendanceOverview.rate, assignmentsData, user.role, courseDashboardRows])
+
+  const effectiveAiInsights = useMemo(() => {
+    if (liveAiInsights.length > 0) {
+      return liveAiInsights
+    }
+
+    const apiInsights = Array.isArray(pageData?.aiInsights) ? pageData.aiInsights : []
+    if (apiInsights.length > 0) {
+      return apiInsights
+    }
+
+    return generatedHeuristicInsights
+  }, [liveAiInsights, pageData?.aiInsights, generatedHeuristicInsights])
+
+  const handleRefreshAiInsights = async () => {
+    setAiActionState({ loading: true, error: '', success: '' })
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/ai/insights/${user.id}/${user.role}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to refresh AI insights')
+      }
+
+      const insights = Array.isArray(result?.insights) ? result.insights : []
+      setLiveAiInsights(insights)
+      setAiActionState({
+        loading: false,
+        error: '',
+        success: insights.length > 0 ? 'AI insights updated successfully' : 'No fresh insights available, showing smart fallback',
+      })
+    } catch (error) {
+      setAiActionState({ loading: false, error: error.message || 'Failed to refresh AI insights', success: '' })
+    }
+  }
+
+  const handleCreateAiAnnouncementDraft = () => {
+    const topInsight = effectiveAiInsights[0]
+    const fallbackTitle = user.role === 'teacher' ? 'Weekly Learning Focus' : 'Learning Update'
+    const fallbackMessage = user.role === 'teacher'
+      ? 'Please review your attendance and assignment status this week. Let us keep momentum high across all courses.'
+      : 'Track your attendance and assignment submissions this week to stay on target.'
+
+    setAnnouncementForm({
+      title: topInsight?.title || fallbackTitle,
+      message: topInsight?.detail || fallbackMessage,
+      classId: selectedTeacherClass?._id || activeTeacherClasses[0]?._id || '',
+      priority: topInsight?.severity === 'attention' ? 'high' : 'medium',
+      category: 'AI Suggestion',
+    })
+    setActionError('')
+    setActionSuccess('AI draft prepared. Review and post it.')
+    setActionModal('announcement')
+  }
+
   const renderDashboardSkeleton = () => (
     <section className="dashboard-overview dashboard-skeleton-wrap">
       <article className="dashboard-panel metric-card" key="skeleton-main-panel">
@@ -2741,21 +2923,26 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           </div>
         </article>
 
-        <article className="dashboard-panel section-card">
+        <article className="dashboard-panel section-card ai-command-panel">
           <div className="panel-header panel-header-strong">
-            <h3>AI Insights</h3>
+            <h3>AI Command Center</h3>
+            <button className="panel-add" type="button" onClick={handleRefreshAiInsights} disabled={aiActionState.loading}>
+              {aiActionState.loading ? 'Refreshing...' : 'Refresh AI'}
+            </button>
           </div>
-          <div className="dashboard-list">
-            {(pageData?.aiInsights || []).length > 0 ? (
-              (pageData?.aiInsights || []).slice(0, 4).map((item) => (
-                <div className="dashboard-list-item" key={`${item.title}-${item.severity}`}>
-                  <div>
-                    <h4>{item.title}</h4>
-                    <p>{item.detail}</p>
+          {aiActionState.error && <p className="auth-feedback auth-error">{aiActionState.error}</p>}
+          {aiActionState.success && <p className="auth-feedback auth-success">{aiActionState.success}</p>}
+          <div className="ai-insight-grid">
+            {effectiveAiInsights.length > 0 ? (
+              effectiveAiInsights.slice(0, 4).map((item, index) => (
+                <div className="ai-insight-card" key={`${item.title}-${index}`}>
+                  <div className="ai-insight-head">
+                    <strong>{item.title}</strong>
+                    <span className={`pill ${item.severity === 'good' ? 'progress' : item.severity === 'attention' ? 'pending' : 'todo'}`}>
+                      {item.severity || 'info'}
+                    </span>
                   </div>
-                  <span className={`pill ${item.severity === 'good' ? 'progress' : item.severity === 'attention' ? 'pending' : 'todo'}`}>
-                    {item.severity || 'info'}
-                  </span>
+                  <p>{item.detail}</p>
                 </div>
               ))
             ) : (
@@ -2767,6 +2954,16 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                 <span className="pill todo">Waiting</span>
               </div>
             )}
+          </div>
+          <div className="ai-command-actions">
+            {user.role === 'teacher' && (
+              <button className="button button-dark" type="button" onClick={handleCreateAiAnnouncementDraft}>
+                Create AI Announcement Draft
+              </button>
+            )}
+            <button className="button button-secondary" type="button" onClick={() => setActivePage('communication')}>
+              Open Communication Hub
+            </button>
           </div>
         </article>
       </div>
@@ -3082,7 +3279,14 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                     <strong>{item.subject}</strong>
                     <p>{item.code}</p>
                   </div>
-                  <button className="panel-add" type="button" onClick={() => navigator.clipboard?.writeText(item.code)}>
+                  <button
+                    className="panel-add"
+                    type="button"
+                    onClick={() => {
+                      setSelectedClassId(item._id)
+                      navigator.clipboard?.writeText(item.code)
+                    }}
+                  >
                     Copy Code
                   </button>
                 </div>
@@ -3094,12 +3298,24 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         {user.role === 'teacher' && selectedTeacherClass && (
           <div className="teacher-roster-panel">
             <h4>Selected Class</h4>
+            <label style={{ display: 'grid', gap: '0.35rem', marginBottom: '0.85rem' }}>
+              Course
+              <select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}>
+                {activeTeacherClasses.map((item) => (
+                  <option key={item._id} value={item._id}>{item.code} - {item.subject}</option>
+                ))}
+              </select>
+            </label>
             <strong>{selectedTeacherClass.subject}</strong>
             <p>{selectedTeacherClass.code} · {selectedTeacherClass.schedule?.[0]?.day || 'No schedule'}</p>
             <div className="roster-stats">
               <span>{selectedTeacherClass.students?.length || 0} students</span>
               <span>{selectedTeacherClass.attendanceRate || 0}% attendance</span>
             </div>
+
+            <button className="panel-add" type="button" onClick={handleSyncAllStudentsToClass} disabled={rosterActionState.loading}>
+              {rosterActionState.loading ? 'Syncing...' : 'Smart Sync Students To This Course'}
+            </button>
 
             <div className="teacher-role-list">
               <strong>Teachers</strong>

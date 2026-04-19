@@ -1557,10 +1557,16 @@ app.post('/api/classes', async (req, res) => {
     const primaryTeacherIds = await resolveUserReferenceList([teacher])
     const mainTeacherId = primaryTeacherIds[0]
     const autoEnrolledStudentIds = mongoReady
-      ? (await User.find({ role: { $regex: /^student$/i } }).select('_id').lean()).map((item) => item._id)
-      : Array.from(users.values())
-          .filter((item) => normalizeRole(item.role) === 'student')
-          .map((item) => item.id)
+      ? uniqueIds([
+          ...(await User.find({ role: { $regex: /^student$/i } }).select('_id').lean()).map((item) => item._id),
+          ...(await Class.distinct('students')).flat(),
+        ])
+      : uniqueIds([
+          ...Array.from(users.values())
+            .filter((item) => normalizeRole(item.role) === 'student')
+            .map((item) => item.id),
+          ...memoryStore.classes.flatMap((item) => item.students || []),
+        ])
 
     if (!mainTeacherId) {
       return res.status(400).json({ message: 'A valid primary teacher is required' })
@@ -1849,6 +1855,51 @@ app.delete('/api/classes/:classId/students/:studentId', async (req, res) => {
     res.json({ message: 'Student removed successfully' })
   } catch (error) {
     res.status(500).json({ message: 'Failed to remove student from class', error: error.message })
+  }
+})
+
+app.post('/api/classes/:classId/students/sync-all', async (req, res) => {
+  try {
+    const { classId } = req.params
+    const classDoc = mongoReady ? await Class.findById(classId).lean() : findMemoryClassById(classId)
+    if (!classDoc) {
+      return res.status(404).json({ message: 'Class not found' })
+    }
+
+    const allStudentIds = mongoReady
+      ? uniqueIds([
+          ...(await User.find({ role: { $regex: /^student$/i } }).select('_id').lean()).map((item) => item._id),
+          ...(await Class.distinct('students')).flat(),
+        ])
+      : uniqueIds([
+          ...Array.from(users.values())
+            .filter((item) => normalizeRole(item.role) === 'student')
+            .map((item) => item.id),
+          ...memoryStore.classes.flatMap((item) => item.students || []),
+        ])
+
+    if (mongoReady) {
+      await Class.findByIdAndUpdate(
+        classId,
+        { $addToSet: { students: { $each: allStudentIds } } },
+        { new: true }
+      )
+    } else {
+      const targetClass = findMemoryClassById(classId)
+      targetClass.students = uniqueIds([...(targetClass.students || []), ...allStudentIds])
+      targetClass.updatedAt = new Date().toISOString()
+    }
+
+    const updatedClass = mongoReady
+      ? await Class.findById(classId).populate('students', 'name email role department year section').lean()
+      : enrichMemoryClass(findMemoryClassById(classId))
+
+    res.json({
+      message: `Synced ${updatedClass?.students?.length || 0} students into this class`,
+      class: updatedClass,
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to sync class students', error: error.message })
   }
 })
 
@@ -2441,10 +2492,19 @@ app.post('/api/attendance/qr/submit', async (req, res) => {
     const { start, end } = buildDayWindow(new Date())
     let attendanceRecord
 
+    const enrolledStudentIds = uniqueIds(classDoc.students || [])
+
     if (mongoReady) {
       attendanceRecord = await Attendance.findOne({ class: session.class, date: { $gte: start, $lte: end } })
       if (!attendanceRecord) {
-        attendanceRecord = await Attendance.create({ class: session.class, date: new Date(), records: [] })
+        attendanceRecord = await Attendance.create({
+          class: session.class,
+          date: new Date(),
+          records: enrolledStudentIds.map((id) => ({
+            student: id,
+            status: String(id) === String(studentId) ? 'present' : 'absent',
+          })),
+        })
       }
 
       const existing = attendanceRecord.records.find((item) => String(item.student) === String(studentId))
@@ -2474,7 +2534,10 @@ app.post('/api/attendance/qr/submit', async (req, res) => {
           _id: createMemoryId('attendance'),
           class: session.class,
           date: new Date().toISOString(),
-          records: [{ student: studentId, status: 'present' }],
+          records: enrolledStudentIds.map((id) => ({
+            student: id,
+            status: String(id) === String(studentId) ? 'present' : 'absent',
+          })),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         })
