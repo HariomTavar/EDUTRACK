@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5000')
-const DEMO_AUTH_ON_DEPLOY = import.meta.env.PROD && !import.meta.env.VITE_API_BASE_URL
 const TOKEN_KEY = 'edutrack_token'
 const USER_KEY = 'edutrack_user'
 const THEME_KEY = 'edutrack_theme'
@@ -13,153 +12,29 @@ const gradeScoreMap = { 'A': 10, 'A-': 9, 'B+': 8, 'B': 7, 'B-': 6, 'C': 5, 'F':
 const navItems = ['Home', 'Features', 'About']
 const livePhrases = ['Assignments updated instantly', 'Attendance insights in real time', 'Performance trends are live now']
 
-const demoDashboardData = {
-  student: {
-    stats: [
-      { title: 'Attendance Rate', value: '96%', trend: '+2.1%', tone: 'green' },
-      { title: 'Assignments Done', value: '18', trend: 'On track', tone: 'blue' },
-      { title: 'Active Classes', value: '6', trend: '6 enrolled', tone: 'amber' },
-      { title: 'Performance', value: 'A-', trend: 'Improving', tone: 'purple' },
-    ],
-    overview: [
-      { title: 'Attendance', value: '96%', detail: '23/24 classes attended', tone: 'overview-card-1' },
-      { title: 'Assignments', value: '18', detail: 'Active assignments', tone: 'overview-card-2' },
-      { title: 'Performance', value: 'A-', detail: 'Consistent performance', tone: 'overview-card-3' },
-    ],
-    todaysClasses: [
-      { subject: 'Data Structures', code: 'CSE301', time: '09:00 AM', status: 'ongoing' },
-      { subject: 'DBMS', code: 'CSE302', time: '11:00 AM', status: 'upcoming' },
-      { subject: 'Web Development', code: 'CSE303', time: '02:00 PM', status: 'upcoming' },
-    ],
-    highlights: [
-      { title: 'Classes enrolled', value: '6' },
-      { title: 'Attendance Rate', value: '96%' },
-      { title: 'Tasks due', value: '4' },
-    ],
-    quickActions: ['View Classes', 'Submit Assignment', 'Check Grades', 'Ask Mentor'],
-    announcements: [
-      { title: 'Welcome to EduTrack!', message: 'Your student workspace is ready.', time: 'Just now', priority: 'high', category: 'System', icon: '📣' },
-      { title: 'New study material', message: 'Teachers have uploaded fresh notes.', time: '1 hour ago', priority: 'medium', category: 'Classes', icon: '✨' },
-    ],
-  },
-  teacher: {
-    stats: [
-      { title: 'Classes Running', value: '08', trend: '2 today', tone: 'green' },
-      { title: 'Students Tracked', value: '214', trend: 'Across all classes', tone: 'blue' },
-      { title: 'Alerts Today', value: '06', trend: 'Needs review', tone: 'amber' },
-      { title: 'Avg Grade', value: 'B+', trend: 'Stable', tone: 'purple' },
-    ],
-    overview: [
-      { title: 'Classes', value: '08', detail: 'Active teaching load', tone: 'overview-card-1' },
-      { title: 'Attendance', value: '94%', detail: 'Weekly average', tone: 'overview-card-2' },
-      { title: 'Grading', value: 'B+', detail: 'Overall class performance', tone: 'overview-card-3' },
-    ],
-    todaysClasses: [
-      { subject: 'Data Structures', code: 'CSE301', time: '09:00 AM', status: 'ongoing' },
-      { subject: 'DBMS', code: 'CSE302', time: '11:00 AM', status: 'upcoming' },
-      { subject: 'Web Development', code: 'CSE303', time: '02:00 PM', status: 'upcoming' },
-    ],
-    highlights: [
-      { title: 'Classes running', value: '08' },
-      { title: 'Students tracked', value: '214' },
-      { title: 'Alerts today', value: '06' },
-    ],
-    quickActions: ['Mark Attendance', 'Create Assignment', 'View Reports', 'Grade Submissions'],
-    announcements: [
-      { title: 'Welcome to EduTrack!', message: 'Your teacher workspace is ready.', time: 'Just now', priority: 'high', category: 'System', icon: '📣' },
-      { title: 'Review pending work', message: 'Assignments and attendance updates are available.', time: '1 hour ago', priority: 'medium', category: 'System', icon: '✨' },
-    ],
-  },
+
+const emptyDashboardData = {
+  stats: [],
+  overview: [],
+  todaysClasses: [],
+  highlights: [],
+  quickActions: [],
+  announcements: [],
+  communicationSummary: null,
+  moduleBoard: [],
+  smartFeatureBoard: [],
+  aiInsights: [],
 }
 
-const demoClassesData = [
-  {
-    _id: 'demo-class-1',
-    name: 'Data Structures and Algorithms',
-    code: 'CSE301',
-    subject: 'Data Structures',
-    credits: 3,
-    teacher: { _id: 'demo-teacher-1', name: 'Dr. Ravi Kumar' },
-    schedule: [{ day: 'Monday', time: '09:00 AM - 10:30 AM', room: 'A101' }],
-    students: [
-      { _id: 'demo-student-1', name: 'Hariom Tavar', email: 'shreetavarbn@gmail.com' },
-      { _id: 'demo-student-2', name: 'Priya Singh', email: 'priya@example.com' },
-      { _id: 'demo-student-3', name: 'Amit Patel', email: 'amit@example.com' },
-    ],
-  },
-  {
-    _id: 'demo-class-2',
-    name: 'Database Management Systems',
-    code: 'CSE302',
-    subject: 'DBMS',
-    credits: 4,
-    teacher: { _id: 'demo-teacher-1', name: 'Dr. Ravi Kumar' },
-    schedule: [{ day: 'Wednesday', time: '11:00 AM - 12:30 PM', room: 'B204' }],
-    students: [
-      { _id: 'demo-student-1', name: 'Hariom Tavar', email: 'shreetavarbn@gmail.com' },
-      { _id: 'demo-student-2', name: 'Priya Singh', email: 'priya@example.com' },
-    ],
-  },
-  {
-    _id: 'demo-class-3',
-    name: 'Web Development',
-    code: 'CSE303',
-    subject: 'Web Dev',
-    credits: 3,
-    teacher: { _id: 'demo-teacher-2', name: 'Prof. Anjali Sharma' },
-    schedule: [{ day: 'Friday', time: '02:00 PM - 03:30 PM', room: 'C305' }],
-    students: [
-      { _id: 'demo-student-1', name: 'Hariom Tavar', email: 'shreetavarbn@gmail.com' },
-      { _id: 'demo-student-2', name: 'Priya Singh', email: 'priya@example.com' },
-      { _id: 'demo-student-3', name: 'Amit Patel', email: 'amit@example.com' },
-      { _id: 'demo-student-4', name: 'Rohan Sharma', email: 'rohan@example.com' },
-    ],
-  },
-]
-
-const demoAssignmentsData = [
-  { _id: 'demo-assignment-1', title: 'Assignment 1: Problem Solving', description: 'Solve the practice set.', dueDate: new Date(Date.now() + 86400000 * 2).toISOString(), submissions: [{}, {}] },
-  { _id: 'demo-assignment-2', title: 'Assignment 2: Mini Project', description: 'Create a small project.', dueDate: new Date(Date.now() + 86400000 * 5).toISOString(), submissions: [{}, {}, {}] },
-  { _id: 'demo-assignment-3', title: 'Assignment 3: Revision Quiz', description: 'Answer the revision questions.', dueDate: new Date(Date.now() + 86400000 * 8).toISOString(), submissions: [{}] },
-]
-
-const demoAttendanceData = [
-  { _id: 'demo-attendance-1', date: new Date().toISOString(), class: { subject: 'Data Structures' }, records: [{ status: 'present' }, { status: 'present' }, { status: 'late' }] },
-  { _id: 'demo-attendance-2', date: new Date(Date.now() - 86400000).toISOString(), class: { subject: 'DBMS' }, records: [{ status: 'present' }, { status: 'absent' }] },
-  { _id: 'demo-attendance-3', date: new Date(Date.now() - 172800000).toISOString(), class: { subject: 'Web Development' }, records: [{ status: 'present' }, { status: 'present' }, { status: 'present' }] },
-]
-
-const demoGradesData = [
-  { _id: 'demo-grade-1', class: { subject: 'Data Structures' }, internals: 18, finals: 42, grade: 'A-' },
-  { _id: 'demo-grade-2', class: { subject: 'DBMS' }, internals: 17, finals: 39, grade: 'B+' },
-  { _id: 'demo-grade-3', class: { subject: 'Web Development' }, internals: 19, finals: 44, grade: 'A' },
-]
-
-const createDemoAuthPayload = (authMode, role, formData) => {
-  const normalizedRole = normalizeRole(role)
-  const nameFromEmail = (formData.email || 'Student User').split('@')[0].replace(/[._-]/g, ' ')
-  const fallbackName = nameFromEmail.replace(/\b\w/g, (char) => char.toUpperCase())
-
-  return {
-    token: `demo-token-${Date.now()}`,
-    user: {
-      id: normalizedRole === 'teacher' ? 'demo-teacher-1' : 'demo-student-1',
-      name: authMode === 'signup' ? (formData.name || 'EduTrack User') : fallbackName,
-      email: formData.email || 'demo@edutrack.app',
-      role: normalizedRole,
-    },
-  }
-}
-
-const demoProfile = (user) => ({
+const buildProfileFromUser = (user) => ({
   ...user,
-  bio: user.role === 'teacher' ? 'Faculty mentor and coordinator' : 'Active learner focusing on project work',
-  department: 'Computer Science',
-  year: user.role === 'teacher' ? 'Faculty' : '3rd Year B.Tech',
-  section: user.role === 'teacher' ? 'Mentor' : 'A',
+  bio: user.bio || '',
+  department: user.department || '',
+  year: user.year || '',
+  section: user.section || '',
+  twoFactorEnabled: Boolean(user.twoFactorEnabled),
+  theme: user.theme || 'light',
 })
-
-const getDemoDashboardData = (role) => demoDashboardData[role === 'teacher' ? 'teacher' : 'student']
 
 const weekdayLookup = {
   sunday: 0,
@@ -308,6 +183,7 @@ const studentSidebar = [
   { key: 'classes', label: 'Classes' },
   { key: 'assignments', label: 'Assignments', badge: '3' },
   { key: 'attendance', label: 'Attendance', badge: '2' },
+  { key: 'communication', label: 'Communication' },
   { key: 'performance', label: 'Performance' },
   { key: 'settings', label: 'Settings' },
 ]
@@ -317,6 +193,7 @@ const teacherSidebar = [
   { key: 'classes', label: 'Classes' },
   { key: 'assignments', label: 'Assignments', badge: '3' },
   { key: 'attendance', label: 'Attendance' },
+  { key: 'communication', label: 'Communication' },
   { key: 'analytics', label: 'Analytics' },
   { key: 'settings', label: 'Settings' },
 ]
@@ -330,7 +207,7 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState('signup')
   const [role, setRole] = useState('student')
-  const [formData, setFormData] = useState({ name: '', email: '', password: '' })
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', classCode: '' })
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
   const [authSuccess, setAuthSuccess] = useState('')
@@ -444,7 +321,10 @@ function App() {
 
   const updateField = (event) => {
     const { name, value } = event.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === 'classCode' ? value.toUpperCase() : value,
+    }))
   }
 
   const persistSession = (data) => {
@@ -459,14 +339,6 @@ function App() {
     setAuthError('')
     setAuthSuccess('')
     setAuthLoading(true)
-
-    if (DEMO_AUTH_ON_DEPLOY) {
-      const demoPayload = createDemoAuthPayload(authMode, role, formData)
-      setAuthSuccess('Backend is not connected on this deploy. Signed in with demo data.')
-      enterDashboard(demoPayload)
-      setAuthLoading(false)
-      return
-    }
 
     const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login'
     const payload =
@@ -499,17 +371,6 @@ function App() {
     setAuthSuccess('')
     setAuthLoading(true)
 
-    if (DEMO_AUTH_ON_DEPLOY) {
-      const demoPayload = createDemoAuthPayload('login', 'student', {
-        name: 'Demo Student',
-        email: 'demo.student@edutrack.app',
-      })
-      setAuthSuccess('Backend is not connected on this deploy. Signed in with demo data.')
-      enterDashboard(demoPayload)
-      setAuthLoading(false)
-      return
-    }
-
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
         method: 'POST',
@@ -524,6 +385,59 @@ function App() {
       enterDashboard(data)
     } catch (error) {
       setAuthError(error.message || 'Could not connect to backend')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleSetupSingleClass = async () => {
+    setAuthError('')
+    setAuthSuccess('')
+    setAuthLoading(true)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/setup/single-class`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ classCode: 'SVVV1' }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create single-class setup')
+      }
+
+      setAuthMode('login')
+      setAuthSuccess('Single class setup ready. Use teacher1@edutrack.com or student1@edutrack.com with password123 and class code SVVV1.')
+    } catch (error) {
+      setAuthError(error.message || 'Failed to create single-class setup')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleSetupMultiSubject = async () => {
+    setAuthError('')
+    setAuthSuccess('')
+    setAuthLoading(true)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/setup/multi-subject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create multi-subject setup')
+      }
+
+      setAuthMode('login')
+      const courseList = data.setupDetails.courses.join(', ')
+      setAuthSuccess(`🎓 Multi-Subject B.Tech Setup Created!\n✅ 5 Courses: ${courseList}\n✅ 20 Students enrolled in all courses\n✅ Test credentials: teacher name@edutrack.com or student1-20@edutrack.com with password123`)
+    } catch (error) {
+      setAuthError(error.message || 'Failed to create multi-subject setup')
     } finally {
       setAuthLoading(false)
     }
@@ -804,6 +718,12 @@ function App() {
                   </button>
                 </div>
               )}
+              {authMode === 'signup' && (
+                <label>
+                  Class Code (optional)
+                  <input name="classCode" type="text" placeholder="Enter class code (e.g. CSE301)" value={formData.classCode || ''} onChange={updateField} />
+                </label>
+              )}
               <button className="button button-primary auth-submit" type="submit" disabled={authLoading}>
                 {authLoading ? 'Please wait...' : authMode === 'signup' ? 'Create Account' : 'Login'}
               </button>
@@ -817,16 +737,19 @@ function App() {
 
 function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLogout, onGoLanding }) {
   const [activePage, setActivePage] = useState('dashboard')
-  const [pageData, setPageData] = useState(() => getDemoDashboardData(user.role))
+  const [pageData, setPageData] = useState(() => emptyDashboardData)
   const [pageLoading, setPageLoading] = useState(false)
   const [pageError, setPageError] = useState('')
-  const [classesData, setClassesData] = useState(() => demoClassesData)
-  const [assignmentsData, setAssignmentsData] = useState(() => demoAssignmentsData)
-  const [attendanceData, setAttendanceData] = useState(() => demoAttendanceData)
-  const [gradesData, setGradesData] = useState(() => demoGradesData)
-  const [profileData, setProfileData] = useState(() => demoProfile(user))
+  const [classesData, setClassesData] = useState([])
+  const [assignmentsData, setAssignmentsData] = useState([])
+  const [attendanceData, setAttendanceData] = useState([])
+  const [gradesData, setGradesData] = useState([])
+  const [communicationFeed, setCommunicationFeed] = useState([])
+  const [chatForm, setChatForm] = useState({ message: '' })
+  const [doubtForm, setDoubtForm] = useState({ title: '', message: '' })
+  const [profileData, setProfileData] = useState(() => buildProfileFromUser(user))
   const [editingProfile, setEditingProfile] = useState(false)
-  const [formData, setFormData] = useState(() => demoProfile(user))
+  const [formData, setFormData] = useState(() => buildProfileFromUser(user))
   const [actionModal, setActionModal] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -840,14 +763,23 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   const [assignmentForm, setAssignmentForm] = useState(() => ({
     title: '',
     description: '',
-    classId: demoClassesData[0]?._id || '',
+    classId: '',
     dueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
     maxScore: 100,
+  }))
+  const [announcementForm, setAnnouncementForm] = useState(() => ({
+    title: '',
+    message: '',
+    classId: '',
+    priority: 'medium',
+    category: 'Class Update',
   }))
   const [classForm, setClassForm] = useState(() => ({
     name: '',
     code: '',
     subject: '',
+    teachers: '',
+    labTeachers: '',
     credits: 3,
     day: 'Monday',
     time: '09:00 AM - 10:30 AM',
@@ -855,10 +787,26 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     description: '',
   }))
   const [attendanceForm, setAttendanceForm] = useState(() => ({
-    classId: demoClassesData[0]?._id || '',
+    classId: '',
     date: new Date().toISOString().slice(0, 10),
     statuses: {},
   }))
+  const [qrAttendanceForm, setQrAttendanceForm] = useState(() => ({
+    classId: '',
+    rangeMeters: 120,
+    expiresMinutes: 15,
+    latitude: '',
+    longitude: '',
+  }))
+  const [activeQrSession, setActiveQrSession] = useState(null)
+  const [studentQrForm, setStudentQrForm] = useState(() => ({
+    token: '',
+    latitude: '',
+    longitude: '',
+  }))
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const [studentRosterForm, setStudentRosterForm] = useState({ email: '' })
+  const [rosterActionState, setRosterActionState] = useState({ loading: false, error: '', success: '' })
   const [joinClassForm, setJoinClassForm] = useState({ code: '' })
   const [securityState, setSecurityState] = useState({
     twoFactorEnabled: Boolean(user.twoFactorEnabled),
@@ -880,20 +828,40 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   }, [activePage])
 
   useEffect(() => {
-    const demoProfileData = demoProfile(user)
-    setProfileData(demoProfileData)
-    setFormData(demoProfileData)
-    setPageData(getDemoDashboardData(user.role))
+    const nextProfile = buildProfileFromUser(user)
+    setProfileData(nextProfile)
+    setFormData(nextProfile)
+    setPageData(emptyDashboardData)
     setSecurityState((current) => ({
       ...current,
-      twoFactorEnabled: Boolean(demoProfileData.twoFactorEnabled),
+      twoFactorEnabled: Boolean(nextProfile.twoFactorEnabled),
       message: '',
       error: '',
     }))
-    if (demoProfileData.theme === 'light' || demoProfileData.theme === 'dark') {
-      setThemeMode(demoProfileData.theme)
+    if (nextProfile.theme === 'light' || nextProfile.theme === 'dark') {
+      setThemeMode(nextProfile.theme)
     }
   }, [user])
+
+  useEffect(() => {
+    if (classesData.length > 0 && !selectedClassId) {
+      setSelectedClassId(classesData[0]._id)
+    }
+    if (classesData.length === 0) {
+      setSelectedClassId('')
+    }
+  }, [classesData, selectedClassId])
+
+  useEffect(() => {
+    if (classesData.length === 0) {
+      setQrAttendanceForm((current) => ({ ...current, classId: '' }))
+      return
+    }
+
+    setQrAttendanceForm((current) => (
+      current.classId ? current : { ...current, classId: classesData[0]._id }
+    ))
+  }, [classesData])
 
   useEffect(() => {
     const normalizedTheme = themeMode === 'dark' ? 'dark' : 'light'
@@ -921,36 +889,39 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       setPageError('')
 
       const headers = token ? { Authorization: `Bearer ${token}` } : {}
-      const fallbackProfile = demoProfile(user)
+      const fallbackProfile = buildProfileFromUser(user)
 
       try {
-        const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse] = await Promise.all([
+        const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse, communicationResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/dashboard/${user.id}/${user.role}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/classes?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/assignments?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/attendance?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/grades?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/profile/${user.id}`, { headers, signal: controller.signal }),
+          fetch(`${API_BASE_URL}/api/communication?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
         ])
 
-        const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult] = await Promise.all([
+        const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult, communicationResult] = await Promise.all([
           parseJsonResponse(dashboardResponse),
           parseJsonResponse(classesResponse),
           parseJsonResponse(assignmentsResponse),
           parseJsonResponse(attendanceResponse),
           parseJsonResponse(gradesResponse),
           parseJsonResponse(profileResponse),
+          parseJsonResponse(communicationResponse),
         ])
 
         if (cancelled) {
           return
         }
 
-        setPageData(dashboardResponse.ok && dashboardResult?.stats ? dashboardResult : getDemoDashboardData(user.role))
-        setClassesData(classesResponse.ok && Array.isArray(classesResult) && classesResult.length > 0 ? classesResult : demoClassesData)
-        setAssignmentsData(assignmentsResponse.ok && Array.isArray(assignmentsResult) && assignmentsResult.length > 0 ? assignmentsResult : demoAssignmentsData)
-        setAttendanceData(attendanceResponse.ok && Array.isArray(attendanceResult) && attendanceResult.length > 0 ? attendanceResult : demoAttendanceData)
-        setGradesData(gradesResponse.ok && Array.isArray(gradesResult) && gradesResult.length > 0 ? gradesResult : demoGradesData)
+        setPageData(dashboardResponse.ok && dashboardResult?.stats ? dashboardResult : emptyDashboardData)
+        setClassesData(classesResponse.ok && Array.isArray(classesResult) ? classesResult : [])
+        setAssignmentsData(assignmentsResponse.ok && Array.isArray(assignmentsResult) ? assignmentsResult : [])
+        setAttendanceData(attendanceResponse.ok && Array.isArray(attendanceResult) ? attendanceResult : [])
+        setGradesData(gradesResponse.ok && Array.isArray(gradesResult) ? gradesResult : [])
+        setCommunicationFeed(communicationResponse.ok && Array.isArray(communicationResult) ? communicationResult : [])
         const resolvedProfile = profileResponse.ok && profileResult?.name ? profileResult : fallbackProfile
         setProfileData(resolvedProfile)
         setFormData(resolvedProfile)
@@ -964,18 +935,20 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       } catch (error) {
         if (error.name !== 'AbortError' && !cancelled) {
           console.error('Failed to load dashboard bundle:', error)
-          setPageData(getDemoDashboardData(user.role))
-          setClassesData(demoClassesData)
-          setAssignmentsData(demoAssignmentsData)
-          setAttendanceData(demoAttendanceData)
-          setGradesData(demoGradesData)
-          const fallbackProfile = demoProfile(user)
+          setPageData(emptyDashboardData)
+          setClassesData([])
+          setAssignmentsData([])
+          setAttendanceData([])
+          setGradesData([])
+          setCommunicationFeed([])
+          const fallbackProfile = buildProfileFromUser(user)
           setProfileData(fallbackProfile)
           setFormData(fallbackProfile)
           setSecurityState((current) => ({
             ...current,
             twoFactorEnabled: Boolean(fallbackProfile.twoFactorEnabled),
           }))
+          setPageError('Live data could not be loaded. Please check backend and database connectivity.')
         }
       } finally {
         if (!cancelled && !controller.signal.aborted) {
@@ -994,32 +967,35 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
 
   const refreshAllData = async () => {
     const headers = token ? { Authorization: `Bearer ${token}` } : {}
-    const fallbackProfile = demoProfile(user)
+    const fallbackProfile = buildProfileFromUser(user)
 
     try {
-      const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse] = await Promise.all([
+      const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse, communicationResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/api/dashboard/${user.id}/${user.role}`, { headers }),
         fetch(`${API_BASE_URL}/api/classes?role=${user.role}&userId=${user.id}`, { headers }),
         fetch(`${API_BASE_URL}/api/assignments?role=${user.role}&userId=${user.id}`, { headers }),
         fetch(`${API_BASE_URL}/api/attendance?role=${user.role}&userId=${user.id}`, { headers }),
         fetch(`${API_BASE_URL}/api/grades?role=${user.role}&userId=${user.id}`, { headers }),
         fetch(`${API_BASE_URL}/api/profile/${user.id}`, { headers }),
+        fetch(`${API_BASE_URL}/api/communication?role=${user.role}&userId=${user.id}`, { headers }),
       ])
 
-      const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult] = await Promise.all([
+      const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult, communicationResult] = await Promise.all([
         parseJsonResponse(dashboardResponse),
         parseJsonResponse(classesResponse),
         parseJsonResponse(assignmentsResponse),
         parseJsonResponse(attendanceResponse),
         parseJsonResponse(gradesResponse),
         parseJsonResponse(profileResponse),
+        parseJsonResponse(communicationResponse),
       ])
 
-      setPageData(dashboardResponse.ok && dashboardResult?.stats ? dashboardResult : getDemoDashboardData(user.role))
-      setClassesData(classesResponse.ok && Array.isArray(classesResult) && classesResult.length > 0 ? classesResult : demoClassesData)
-      setAssignmentsData(assignmentsResponse.ok && Array.isArray(assignmentsResult) && assignmentsResult.length > 0 ? assignmentsResult : demoAssignmentsData)
-      setAttendanceData(attendanceResponse.ok && Array.isArray(attendanceResult) && attendanceResult.length > 0 ? attendanceResult : demoAttendanceData)
-      setGradesData(gradesResponse.ok && Array.isArray(gradesResult) && gradesResult.length > 0 ? gradesResult : demoGradesData)
+      setPageData(dashboardResponse.ok && dashboardResult?.stats ? dashboardResult : emptyDashboardData)
+      setClassesData(classesResponse.ok && Array.isArray(classesResult) ? classesResult : [])
+      setAssignmentsData(assignmentsResponse.ok && Array.isArray(assignmentsResult) ? assignmentsResult : [])
+      setAttendanceData(attendanceResponse.ok && Array.isArray(attendanceResult) ? attendanceResult : [])
+      setGradesData(gradesResponse.ok && Array.isArray(gradesResult) ? gradesResult : [])
+      setCommunicationFeed(communicationResponse.ok && Array.isArray(communicationResult) ? communicationResult : [])
       const resolvedProfile = profileResponse.ok && profileResult?.name ? profileResult : fallbackProfile
       setProfileData(resolvedProfile)
       setFormData(resolvedProfile)
@@ -1149,7 +1125,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ studentId: user.id, code: joinClassForm.code }),
+        body: JSON.stringify({ userId: user.id, role: user.role, code: joinClassForm.code }),
       })
 
       const result = await parseJsonResponse(response)
@@ -1157,7 +1133,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         throw new Error(result.message || 'Failed to join class')
       }
 
-      setActionSuccess('Class joined successfully')
+      setActionSuccess(user.role === 'teacher' ? 'Class linked successfully' : 'Class joined successfully')
       setJoinClassForm({ code: '' })
       await refreshAllData()
     } catch (error) {
@@ -1167,10 +1143,10 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     }
   }
 
-  const activeTeacherClasses = classesData.length > 0 ? classesData : demoClassesData
+  const activeTeacherClasses = classesData
 
   const openAssignmentModal = () => {
-    const defaultClassId = activeTeacherClasses[0]?._id || ''
+    const defaultClassId = selectedTeacherClass?._id || activeTeacherClasses[0]?._id || ''
     setAssignmentForm({
       title: '',
       description: '',
@@ -1192,10 +1168,13 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   }
 
   const openClassModal = () => {
+    const firstClassCode = `CLS-${String(new Date().getFullYear()).slice(-2)}-${String(Date.now()).slice(-4)}`
     setClassForm({
       name: '',
-      code: '',
+      code: firstClassCode,
       subject: '',
+      teachers: '',
+      labTeachers: '',
       credits: 3,
       day: 'Monday',
       time: '09:00 AM - 10:30 AM',
@@ -1207,9 +1186,186 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     setActionModal('class')
   }
 
+  const openAnnouncementModal = () => {
+    setAnnouncementForm({
+      title: '',
+      message: '',
+      classId: activeTeacherClasses[0]?._id || '',
+      priority: 'medium',
+      category: 'Class Update',
+    })
+    setActionError('')
+    setActionSuccess('')
+    setActionModal('announcement')
+  }
+
+  const selectedTeacherClass = useMemo(
+    () => classesData.find((item) => item._id === selectedClassId) || classesData[0] || null,
+    [classesData, selectedClassId]
+  )
+
+  useEffect(() => {
+    const targetClassId = selectedTeacherClass?._id || qrAttendanceForm.classId
+    if (!targetClassId) {
+      setActiveQrSession(null)
+      return
+    }
+
+    let cancelled = false
+    const loadActiveSession = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/attendance/qr/active?classId=${targetClassId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+        const result = await parseJsonResponse(response)
+        if (!cancelled) {
+          setActiveQrSession(result?.active ? result : null)
+        }
+      } catch {
+        if (!cancelled) {
+          setActiveQrSession(null)
+        }
+      }
+    }
+
+    loadActiveSession()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTeacherClass?._id, qrAttendanceForm.classId, token])
+
+  const handleAddStudentToClass = async (event) => {
+    event.preventDefault()
+    if (!selectedTeacherClass?._id || !studentRosterForm.email) {
+      return
+    }
+
+    setRosterActionState({ loading: true, error: '', success: '' })
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/classes/${selectedTeacherClass._id}/students`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ studentEmail: studentRosterForm.email }),
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to add student')
+      }
+
+      setRosterActionState({ loading: false, error: '', success: 'Student added to class' })
+      setStudentRosterForm({ email: '' })
+      await refreshAllData()
+    } catch (error) {
+      setRosterActionState({ loading: false, error: error.message || 'Failed to add student', success: '' })
+    }
+  }
+
+  const handleRemoveStudentFromClass = async (studentId) => {
+    if (!selectedTeacherClass?._id || !studentId) {
+      return
+    }
+
+    setRosterActionState({ loading: true, error: '', success: '' })
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/classes/${selectedTeacherClass._id}/students/${studentId}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to remove student')
+      }
+
+      setRosterActionState({ loading: false, error: '', success: 'Student removed from class' })
+      await refreshAllData()
+    } catch (error) {
+      setRosterActionState({ loading: false, error: error.message || 'Failed to remove student', success: '' })
+    }
+  }
+
+  const handleSendClassChat = async (event) => {
+    event.preventDefault()
+    if (!selectedTeacherClass?._id || !chatForm.message.trim()) {
+      return
+    }
+
+    setActionLoading(true)
+    setActionError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/communication/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          classId: selectedTeacherClass._id,
+          senderId: user.id,
+          message: chatForm.message.trim(),
+        }),
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to send chat message')
+      }
+
+      setChatForm({ message: '' })
+      await refreshAllData()
+    } catch (error) {
+      setActionError(error.message || 'Failed to send chat message')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCreateDoubt = async (event) => {
+    event.preventDefault()
+    if (!selectedTeacherClass?._id || !doubtForm.title.trim() || !doubtForm.message.trim()) {
+      return
+    }
+
+    setActionLoading(true)
+    setActionError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/communication/doubt`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          classId: selectedTeacherClass._id,
+          senderId: user.id,
+          title: doubtForm.title.trim(),
+          message: doubtForm.message.trim(),
+        }),
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to create doubt thread')
+      }
+
+      setDoubtForm({ title: '', message: '' })
+      await refreshAllData()
+    } catch (error) {
+      setActionError(error.message || 'Failed to create doubt thread')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const openAttendanceModal = () => {
-    const defaultClassId = activeTeacherClasses[0]?._id || ''
-    const defaultClass = activeTeacherClasses.find((item) => item._id === defaultClassId) || activeTeacherClasses[0]
+    const defaultClassId = selectedTeacherClass?._id || activeTeacherClasses[0]?._id || ''
+    const defaultClass = activeTeacherClasses.find((item) => item._id === defaultClassId) || selectedTeacherClass || activeTeacherClasses[0]
     const statuses = (defaultClass?.students || []).reduce((accumulator, student) => {
       accumulator[student._id] = 'present'
       return accumulator
@@ -1287,9 +1443,11 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         },
         body: JSON.stringify({
           name: classForm.name,
-          code: classForm.code,
+          code: classForm.code?.trim().toUpperCase(),
           subject: classForm.subject,
           teacher: user.id,
+          teachers: classForm.teachers,
+          labTeachers: classForm.labTeachers,
           credits: Number(classForm.credits) || 3,
           description: classForm.description,
           schedule: [{ day: classForm.day, time: classForm.time, room: classForm.room }],
@@ -1306,6 +1464,43 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       await refreshAllData()
     } catch (error) {
       setActionError(error.message || 'Failed to create class')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCreateAnnouncement = async (event) => {
+    event.preventDefault()
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/announcements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          teacherId: user.id,
+          classId: announcementForm.classId || null,
+          title: announcementForm.title,
+          message: announcementForm.message,
+          priority: announcementForm.priority,
+          category: announcementForm.category,
+        }),
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to create announcement')
+      }
+
+      setActionSuccess('Announcement posted successfully')
+      await refreshAllData()
+    } catch (error) {
+      setActionError(error.message || 'Failed to create announcement')
     } finally {
       setActionLoading(false)
     }
@@ -1347,6 +1542,115 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       await refreshAllData()
     } catch (error) {
       setActionError(error.message || 'Failed to mark attendance')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCaptureTeacherLocation = () => {
+    if (!navigator.geolocation) {
+      setActionError('Geolocation is not supported in this browser.')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setQrAttendanceForm((current) => ({
+          ...current,
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        }))
+      },
+      () => setActionError('Unable to capture teacher location. Please allow location access.')
+    )
+  }
+
+  const handleCreateAttendanceQr = async (event) => {
+    event.preventDefault()
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/attendance/qr/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          classId: qrAttendanceForm.classId || selectedTeacherClass?._id,
+          teacherId: user.id,
+          latitude: qrAttendanceForm.latitude,
+          longitude: qrAttendanceForm.longitude,
+          rangeMeters: Number(qrAttendanceForm.rangeMeters) || 120,
+          expiresMinutes: Number(qrAttendanceForm.expiresMinutes) || 15,
+        }),
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to create attendance QR')
+      }
+
+      setActiveQrSession(result)
+      setActionSuccess(`QR created for ${result.classCode}. Students within ${result.rangeMeters}m can mark attendance.`)
+    } catch (error) {
+      setActionError(error.message || 'Failed to create attendance QR')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCaptureStudentLocation = () => {
+    if (!navigator.geolocation) {
+      setActionError('Geolocation is not supported in this browser.')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setStudentQrForm((current) => ({
+          ...current,
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        }))
+      },
+      () => setActionError('Unable to capture your location. Please allow location access.')
+    )
+  }
+
+  const handleSubmitQrAttendance = async (event) => {
+    event.preventDefault()
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/attendance/qr/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          token: studentQrForm.token.trim(),
+          studentId: user.id,
+          latitude: Number(studentQrForm.latitude),
+          longitude: Number(studentQrForm.longitude),
+        }),
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to mark attendance via QR')
+      }
+
+      setActionSuccess(`Attendance marked. Distance ${result.distanceMeters}m of ${result.allowedMeters}m allowed range.`)
+      setStudentQrForm((current) => ({ ...current, token: '' }))
+      await refreshAllData()
+    } catch (error) {
+      setActionError(error.message || 'Failed to mark attendance via QR')
     } finally {
       setActionLoading(false)
     }
@@ -1417,7 +1721,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
 
   const calendarGrid = useMemo(() => buildCalendarGrid(calendarMonth), [calendarMonth])
   const calendarEvents = useMemo(
-    () => buildCalendarEvents(calendarMonth, classesData.length > 0 ? classesData : demoClassesData, assignmentsData.length > 0 ? assignmentsData : demoAssignmentsData, attendanceData.length > 0 ? attendanceData : demoAttendanceData),
+    () => buildCalendarEvents(calendarMonth, classesData, assignmentsData, attendanceData),
     [calendarMonth, classesData, assignmentsData, attendanceData]
   )
 
@@ -1468,6 +1772,159 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       completion: total > 0 ? Math.round((submitted / total) * 100) : 0,
     }
   }, [assignmentsData])
+
+  const courseDashboardRows = useMemo(() => {
+    return (classesData || []).map((cls) => {
+      const classId = String(cls?._id || '')
+      const teacherList = [...(Array.isArray(cls?.teachers) ? cls.teachers : []), cls?.teacher]
+        .filter(Boolean)
+        .map((teacher) => teacher?.name || teacher?.email || 'Teacher')
+      const uniqueTeacherNames = Array.from(new Set(teacherList))
+
+      const classAssignments = (assignmentsData || []).filter(
+        (item) => String(item?.class?._id || item?.class || '') === classId
+      )
+      const classAttendanceRecords = (attendanceData || []).filter(
+        (record) => String(record?.class?._id || record?.class || '') === classId
+      )
+      const classGrades = (gradesData || []).filter(
+        (grade) => String(grade?.class?._id || grade?.class || '') === classId
+      )
+
+      const attendanceAggregate = classAttendanceRecords.reduce(
+        (accumulator, record) => {
+          const rows = Array.isArray(record.records) ? record.records : []
+          accumulator.total += rows.length
+          accumulator.present += rows.filter((entry) => entry.status === 'present').length
+          return accumulator
+        },
+        { total: 0, present: 0 }
+      )
+
+      const classAttendanceRate = attendanceAggregate.total > 0
+        ? Math.round((attendanceAggregate.present / attendanceAggregate.total) * 100)
+        : 0
+
+      const submissionsCount = classAssignments.reduce(
+        (sum, assignment) => sum + (assignment?.submissions?.length || 0),
+        0
+      )
+
+      const studentAttendance = classAttendanceRecords.reduce(
+        (accumulator, record) => {
+          const rows = Array.isArray(record.records) ? record.records : []
+          const studentRow = rows.find((entry) => String(entry?.student?._id || entry?.student) === String(user.id))
+          if (studentRow) {
+            accumulator.total += 1
+            if (studentRow.status === 'present') {
+              accumulator.present += 1
+            }
+          }
+          return accumulator
+        },
+        { total: 0, present: 0 }
+      )
+
+      const studentAttendanceRate = studentAttendance.total > 0
+        ? Math.round((studentAttendance.present / studentAttendance.total) * 100)
+        : 0
+
+      const studentSubmittedAssignments = classAssignments.filter((assignment) => {
+        const rows = Array.isArray(assignment?.submissions) ? assignment.submissions : []
+        return rows.some((entry) => String(entry?.student?._id || entry?.student) === String(user.id))
+      }).length
+
+      const studentGradeRows = classGrades.filter(
+        (grade) => String(grade?.student?._id || grade?.student) === String(user.id)
+      )
+      const studentAverageScore = studentGradeRows.length > 0
+        ? Math.round(
+            studentGradeRows.reduce((sum, grade) => sum + Math.round((Number(grade?.internals || 0) + Number(grade?.finals || 0)) / 2), 0) /
+              studentGradeRows.length
+          )
+        : 0
+      const latestGrade = studentGradeRows[0]?.grade || 'N/A'
+
+      return {
+        classId,
+        classCode: cls?.code || 'N/A',
+        className: cls?.name || cls?.subject || 'Class',
+        subject: cls?.subject || cls?.name || 'Subject',
+        teachers: uniqueTeacherNames,
+        studentCount: Array.isArray(cls?.students) ? cls.students.length : 0,
+        totalAssignments: classAssignments.length,
+        submissionsCount,
+        attendanceSessions: classAttendanceRecords.length,
+        classAttendanceRate,
+        studentAttendanceRate,
+        studentSubmittedAssignments,
+        studentAverageScore,
+        latestGrade,
+      }
+    })
+  }, [classesData, assignmentsData, attendanceData, gradesData, user.id])
+
+  const teacherStudentProgressRows = useMemo(() => {
+    if (user.role !== 'teacher' || !selectedTeacherClass?._id) {
+      return []
+    }
+
+    const classId = String(selectedTeacherClass._id)
+    const classAssignments = assignmentsData.filter(
+      (item) => String(item?.class?._id || item?.class || '') === classId
+    )
+    const classAttendanceRecords = attendanceData.filter(
+      (record) => String(record?.class?._id || record?.class || '') === classId
+    )
+
+    return (selectedTeacherClass.students || []).map((student) => {
+      const studentId = String(student?._id || student?.id || '')
+      const attendanceTotals = classAttendanceRecords.reduce(
+        (accumulator, record) => {
+          const rows = Array.isArray(record.records) ? record.records : []
+          const row = rows.find((entry) => String(entry?.student?._id || entry?.student) === studentId)
+          if (row) {
+            accumulator.total += 1
+            if (row.status === 'present') {
+              accumulator.present += 1
+            }
+          }
+          return accumulator
+        },
+        { total: 0, present: 0 }
+      )
+      const attendanceRate = attendanceTotals.total > 0
+        ? Math.round((attendanceTotals.present / attendanceTotals.total) * 100)
+        : 0
+
+      const submittedAssignments = classAssignments.filter((assignment) => {
+        const rows = Array.isArray(assignment?.submissions) ? assignment.submissions : []
+        return rows.some((entry) => String(entry?.student?._id || entry?.student) === studentId)
+      }).length
+
+      const gradeRows = gradesData.filter(
+        (grade) => String(grade?.class?._id || grade?.class || '') === classId && String(grade?.student?._id || grade?.student) === studentId
+      )
+      const averageScore = gradeRows.length > 0
+        ? Math.round(
+            gradeRows.reduce((sum, grade) => sum + Math.round((Number(grade?.internals || 0) + Number(grade?.finals || 0)) / 2), 0) / gradeRows.length
+          )
+        : 0
+      const latestGrade = gradeRows[0]?.grade || 'N/A'
+
+      return {
+        studentId,
+        name: student?.name || 'Student',
+        email: student?.email || 'N/A',
+        attendanceRate,
+        attendanceSummary: `${attendanceTotals.present}/${attendanceTotals.total}`,
+        submittedAssignments,
+        totalAssignments: classAssignments.length,
+        averageScore,
+        latestGrade,
+      }
+    })
+  }, [user.role, selectedTeacherClass, assignmentsData, attendanceData, gradesData])
 
   const attendanceOverview = useMemo(() => {
     const totals = attendanceData.reduce(
@@ -1551,6 +2008,179 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           </article>
         ))}
       </div>
+
+      {user.role === 'teacher' && (
+        <div className="dashboard-row dashboard-home-row">
+          <article className="dashboard-panel section-card">
+            <div className="panel-header panel-header-strong">
+              <h3>Teacher Control Center</h3>
+              <span className="pill progress">Live control</span>
+            </div>
+            <p style={{ marginTop: 0, color: 'var(--text-secondary)' }}>
+              Create classes, publish updates, and manage attendance without leaving the dashboard.
+            </p>
+            <div className="teacher-control-grid">
+              <button className="button button-dark" type="button" onClick={openClassModal}>Create Class</button>
+              <button className="button button-dark" type="button" onClick={openAssignmentModal}>Create Assignment</button>
+              <button className="button button-dark" type="button" onClick={openAttendanceModal}>Mark Attendance</button>
+              <button className="button button-dark" type="button" onClick={openAnnouncementModal}>Post Update</button>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {user.role === 'teacher' && (
+        <div className="dashboard-row dashboard-home-row">
+          <article className="dashboard-panel section-card">
+            <div className="panel-header panel-header-strong">
+              <h3>Subject-Wise Operations</h3>
+              <span className="pill progress">{courseDashboardRows.length} courses</span>
+            </div>
+            <div className="dashboard-list">
+              {courseDashboardRows.length > 0 ? (
+                courseDashboardRows.map((course) => (
+                  <div className="dashboard-list-item" key={course.classId || course.classCode}>
+                    <div>
+                      <h4>{course.classCode} · {course.subject}</h4>
+                      <p>
+                        {course.studentCount} students · {course.attendanceSessions} sessions · {course.classAttendanceRate}% attendance · {course.totalAssignments} assignments ({course.submissionsCount} submissions)
+                      </p>
+                      <small className="small-muted">Teachers: {course.teachers.length > 0 ? course.teachers.join(', ') : 'Not assigned'}</small>
+                    </div>
+                    <button className="panel-add" type="button" onClick={() => setSelectedClassId(course.classId)}>
+                      Open Class
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="dashboard-list-item">
+                  <div>
+                    <h4>No subject data yet</h4>
+                    <p>Create classes and attendance to view course-wise operations.</p>
+                  </div>
+                  <span className="pill todo">Empty</span>
+                </div>
+              )}
+            </div>
+          </article>
+
+          <article className="dashboard-panel section-card">
+            <div className="panel-header panel-header-strong">
+              <h3>Student Progress In {selectedTeacherClass?.code || 'Selected Class'}</h3>
+              <span className="pill pending">{teacherStudentProgressRows.length} students</span>
+            </div>
+            {classesData.length > 0 && (
+              <div className="class-switcher">
+                {classesData.map((cls) => (
+                  <button
+                    key={cls._id}
+                    type="button"
+                    className={`class-switcher-pill ${selectedClassId === cls._id ? 'active' : ''}`}
+                    onClick={() => setSelectedClassId(cls._id)}
+                  >
+                    {cls.code}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="dashboard-list" style={{ maxHeight: '360px', overflowY: 'auto' }}>
+              {teacherStudentProgressRows.length > 0 ? (
+                teacherStudentProgressRows.map((student) => (
+                  <div className="dashboard-list-item" key={student.studentId || student.email}>
+                    <div>
+                      <h4>{student.name}</h4>
+                      <p>{student.email}</p>
+                      <small className="small-muted">
+                        Attendance {student.attendanceRate}% ({student.attendanceSummary}) · Assignments {student.submittedAssignments}/{student.totalAssignments} · Score {student.averageScore || 'N/A'}% · Grade {student.latestGrade}
+                      </small>
+                    </div>
+                    <span className={`pill ${student.attendanceRate >= 75 ? 'progress' : 'pending'}`}>
+                      {student.attendanceRate}%
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="dashboard-list-item">
+                  <div>
+                    <h4>No student progress yet</h4>
+                    <p>Once attendance and assignments are recorded, student-wise progress will appear here.</p>
+                  </div>
+                  <span className="pill todo">Waiting</span>
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
+
+      {user.role === 'student' && (
+        <div className="dashboard-row dashboard-home-row">
+          <article className="dashboard-panel section-card">
+            <div className="panel-header panel-header-strong">
+              <h3>My 5 Subjects And Teachers</h3>
+              <span className="pill progress">{courseDashboardRows.length} courses</span>
+            </div>
+            <div className="dashboard-list">
+              {courseDashboardRows.length > 0 ? (
+                courseDashboardRows.map((course) => (
+                  <div className="dashboard-list-item" key={course.classId || course.classCode}>
+                    <div>
+                      <h4>{course.classCode} · {course.subject}</h4>
+                      <p>Teacher: {course.teachers.length > 0 ? course.teachers.join(', ') : 'Not assigned'}</p>
+                      <small className="small-muted">
+                        Attendance {course.studentAttendanceRate}% · Assignments {course.studentSubmittedAssignments}/{course.totalAssignments} · Latest grade {course.latestGrade}
+                      </small>
+                    </div>
+                    <span className={`pill ${course.studentAttendanceRate >= 75 ? 'progress' : 'pending'}`}>
+                      {course.studentAttendanceRate}%
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="dashboard-list-item">
+                  <div>
+                    <h4>No enrolled subjects</h4>
+                    <p>Your subjects and teachers will appear here after enrollment.</p>
+                  </div>
+                  <span className="pill todo">Empty</span>
+                </div>
+              )}
+            </div>
+          </article>
+
+          <article className="dashboard-panel section-card">
+            <div className="panel-header panel-header-strong">
+              <h3>My Course Progress</h3>
+            </div>
+            <div className="highlight-grid">
+              {courseDashboardRows.length > 0 ? (
+                courseDashboardRows.map((course) => (
+                  <div className="highlight-card rich-highlight-card" key={`progress-${course.classId || course.classCode}`}>
+                    <div className="highlight-meta-row">
+                      <span>{course.classCode}</span>
+                      <em className="highlight-dot dot-1"></em>
+                    </div>
+                    <strong>{course.subject}</strong>
+                    <small className="small-muted">Score: {course.studentAverageScore || 'N/A'}% · Grade: {course.latestGrade}</small>
+                    <div className="mini-progress-track">
+                      <span style={{ width: `${Math.max(course.studentAttendanceRate, 8)}%` }}></span>
+                    </div>
+                    <small>Attendance {course.studentAttendanceRate}%</small>
+                  </div>
+                ))
+              ) : (
+                <div className="dashboard-list-item">
+                  <div>
+                    <h4>No progress data</h4>
+                    <p>Add attendance/grades to view your course progress cards.</p>
+                  </div>
+                  <span className="pill todo">Waiting</span>
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
 
       <div className="dashboard-row dashboard-home-row">
         <article className="dashboard-panel section-card">
@@ -1637,6 +2267,234 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           </div>
         </article>
       </div>
+
+      <div className="dashboard-row dashboard-home-row">
+        <article className="dashboard-panel section-card">
+          <div className="panel-header panel-header-strong">
+            <h3>Live Announcements</h3>
+          </div>
+          <div className="dashboard-list">
+            {(pageData?.announcements || []).length > 0 ? (
+              (pageData?.announcements || []).slice(0, 4).map((item) => (
+                <div className="dashboard-list-item" key={item.id || `${item.title}-${item.time}`}>
+                  <div>
+                    <h4>{item.icon || '📣'} {item.title}</h4>
+                    <p>{item.message}</p>
+                  </div>
+                  <span className="pill progress">{item.time || 'now'}</span>
+                </div>
+              ))
+            ) : (
+              <div className="dashboard-list-item">
+                <div>
+                  <h4>No announcements yet</h4>
+                  <p>Teacher/class announcements will appear here in real time.</p>
+                </div>
+                <span className="pill todo">Empty</span>
+              </div>
+            )}
+          </div>
+        </article>
+
+        <article className="dashboard-panel section-card">
+          <div className="panel-header panel-header-strong">
+            <h3>AI Insights</h3>
+          </div>
+          <div className="dashboard-list">
+            {(pageData?.aiInsights || []).length > 0 ? (
+              (pageData?.aiInsights || []).slice(0, 4).map((item) => (
+                <div className="dashboard-list-item" key={`${item.title}-${item.severity}`}>
+                  <div>
+                    <h4>{item.title}</h4>
+                    <p>{item.detail}</p>
+                  </div>
+                  <span className={`pill ${item.severity === 'good' ? 'progress' : item.severity === 'attention' ? 'pending' : 'todo'}`}>
+                    {item.severity || 'info'}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="dashboard-list-item">
+                <div>
+                  <h4>No insight data yet</h4>
+                  <p>Insights appear once attendance, grades, and assignments are recorded.</p>
+                </div>
+                <span className="pill todo">Waiting</span>
+              </div>
+            )}
+          </div>
+        </article>
+      </div>
+
+      <div className="dashboard-row dashboard-home-row">
+        <article className="dashboard-panel section-card">
+          <div className="panel-header panel-header-strong">
+            <h3>Smart Notifications</h3>
+          </div>
+          <div className="dashboard-list">
+            {(pageData?.notifications || []).length > 0 ? (
+              (pageData?.notifications || []).slice(0, 5).map((item) => (
+                <div className="dashboard-list-item" key={item.id || `${item.title}-${item.time}`}>
+                  <div>
+                    <h4>{item.title}</h4>
+                    <p>{item.message}</p>
+                  </div>
+                  <span className={`pill ${item.read ? 'todo' : 'pending'}`}>{item.time || 'now'}</span>
+                </div>
+              ))
+            ) : (
+              <div className="dashboard-list-item">
+                <div>
+                  <h4>No notifications yet</h4>
+                  <p>Assignment, grade, attendance and class updates will appear here.</p>
+                </div>
+                <span className="pill todo">Empty</span>
+              </div>
+            )}
+          </div>
+        </article>
+
+        <article className="dashboard-panel section-card">
+          <div className="panel-header panel-header-strong">
+            <h3>Communication System</h3>
+            <button className="panel-add" type="button" onClick={() => setActivePage('communication')}>Open</button>
+          </div>
+          <div className="overview-cards">
+            <div className="overview-card info rich-overview-card">
+              <strong>{pageData?.communicationSummary?.announcements || 0}</strong>
+              <p>Announcements</p>
+            </div>
+            <div className="overview-card success rich-overview-card">
+              <strong>{pageData?.communicationSummary?.chats || 0}</strong>
+              <p>Chat messages</p>
+            </div>
+            <div className="overview-card warning rich-overview-card">
+              <strong>{pageData?.communicationSummary?.doubts || 0}</strong>
+              <p>Doubt threads</p>
+            </div>
+          </div>
+          <p style={{ marginBottom: 0, color: 'var(--text-secondary)' }}>
+            Open doubts: {pageData?.communicationSummary?.unresolvedDoubts || 0}
+          </p>
+        </article>
+      </div>
+
+      <div className="dashboard-row dashboard-home-row">
+        <article className="dashboard-panel section-card">
+          <div className="panel-header panel-header-strong">
+            <h3>Platform Modules</h3>
+          </div>
+          <div className="dashboard-list">
+            {(pageData?.moduleBoard || []).map((item) => (
+              <div className="dashboard-list-item" key={item.title}>
+                <div>
+                  <h4>{item.title}</h4>
+                  <p>{item.detail}</p>
+                </div>
+                <span className="pill progress">{item.status}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="dashboard-panel section-card">
+          <div className="panel-header panel-header-strong">
+            <h3>Smart Features + AI</h3>
+          </div>
+          <div className="dashboard-list">
+            {(pageData?.smartFeatureBoard || []).map((item) => (
+              <div className="dashboard-list-item" key={item.title}>
+                <div>
+                  <h4>{item.title}</h4>
+                  <p>{item.detail}</p>
+                </div>
+                <span className={`pill ${item.status === 'ai-live' || item.status === 'active' ? 'progress' : 'pending'}`}>{item.status}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+    </section>
+  )
+
+  const renderCommunicationPage = () => (
+    <section className="work-page-grid pro-page-grid">
+      <article className="dashboard-panel work-main">
+        <div className="panel-header panel-header-strong">
+          <h3>Communication Feed</h3>
+          <span className="pill progress">{communicationFeed.length} updates</span>
+        </div>
+        <div className="dashboard-list">
+          {communicationFeed.length > 0 ? (
+            communicationFeed.slice(0, 40).map((entry) => (
+              <div className="dashboard-list-item" key={entry._id || `${entry.title}-${entry.message}-${entry.createdAt}`}>
+                <div>
+                  <h4>{entry.type === 'doubt' ? 'Doubt Thread' : 'Chat'} {entry.title ? `· ${entry.title}` : ''}</h4>
+                  <p>{entry.message}</p>
+                </div>
+                <span className={`pill ${entry.type === 'doubt' && entry.status !== 'resolved' ? 'pending' : 'progress'}`}>
+                  {entry.status || entry.type}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="dashboard-list-item">
+              <div>
+                <h4>No communication records yet</h4>
+                <p>Post a class chat or create a doubt thread to start collaboration.</p>
+              </div>
+              <span className="pill todo">Empty</span>
+            </div>
+          )}
+        </div>
+      </article>
+
+      <aside className="dashboard-panel work-side">
+        <div className="panel-header panel-header-strong">
+          <h3>Start Discussion</h3>
+        </div>
+        <form className="settings-form compact-settings-form" onSubmit={handleSendClassChat}>
+          <label>
+            Class Chat Message
+            <textarea
+              value={chatForm.message}
+              onChange={(event) => setChatForm({ message: event.target.value })}
+              rows={3}
+              placeholder="Share quick class update"
+              required
+            />
+          </label>
+          <button className="button button-dark" type="submit" disabled={actionLoading || !selectedTeacherClass?._id}>
+            Send Chat
+          </button>
+        </form>
+
+        <form className="settings-form compact-settings-form" onSubmit={handleCreateDoubt}>
+          <label>
+            Doubt Title
+            <input
+              type="text"
+              value={doubtForm.title}
+              onChange={(event) => setDoubtForm((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Topic or concept"
+              required
+            />
+          </label>
+          <label>
+            Doubt Details
+            <textarea
+              value={doubtForm.message}
+              onChange={(event) => setDoubtForm((current) => ({ ...current, message: event.target.value }))}
+              rows={4}
+              placeholder="Explain your doubt"
+              required
+            />
+          </label>
+          <button className="button button-primary" type="submit" disabled={actionLoading || !selectedTeacherClass?._id}>
+            Create Doubt Thread
+          </button>
+        </form>
+      </aside>
     </section>
   )
 
@@ -1647,6 +2505,20 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           <h3>Classes</h3>
           {user.role === 'teacher' && <button className="panel-add" type="button" onClick={openClassModal}>+ New Class</button>}
         </div>
+        {user.role === 'teacher' && classesData.length > 0 && (
+          <div className="class-switcher">
+            {classesData.map((cls) => (
+              <button
+                key={cls._id}
+                type="button"
+                className={`class-switcher-pill ${selectedClassId === cls._id ? 'active' : ''}`}
+                onClick={() => setSelectedClassId(cls._id)}
+              >
+                {cls.code}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="pro-cards-grid">
           {metricsByClass.length > 0 ? (
             metricsByClass.map((cls) => (
@@ -1658,6 +2530,12 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                   </div>
                   <span className="pill progress">{cls.credits} cr</span>
                 </div>
+                {user.role === 'teacher' && (
+                  <div className="class-teacher-summary">
+                    <span>{(cls.teachers || [cls.teacher]).length} teachers</span>
+                    <span>{(cls.labTeachers || []).length} lab teachers</span>
+                  </div>
+                )}
                 <div className="pro-card-stats">
                   <span>{cls.schedule?.[0]?.day || 'Schedule pending'}</span>
                   <strong>{user.role === 'teacher' ? `${cls.students?.length || 0} students` : 'Enrolled'}</strong>
@@ -1699,20 +2577,96 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           </div>
         </div>
 
-        {user.role === 'student' && (
+        {user.role === 'teacher' && activeTeacherClasses.length > 0 && (
+          <div className="teacher-invite-panel">
+            <h4>Invite Students</h4>
+            <p>Share a class code or copy it directly from the card below.</p>
+            <div className="teacher-invite-list">
+              {activeTeacherClasses.slice(0, 3).map((item) => (
+                <div className="teacher-invite-item" key={item._id}>
+                  <div>
+                    <strong>{item.subject}</strong>
+                    <p>{item.code}</p>
+                  </div>
+                  <button className="panel-add" type="button" onClick={() => navigator.clipboard?.writeText(item.code)}>
+                    Copy Code
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {user.role === 'teacher' && selectedTeacherClass && (
+          <div className="teacher-roster-panel">
+            <h4>Selected Class</h4>
+            <strong>{selectedTeacherClass.subject}</strong>
+            <p>{selectedTeacherClass.code} · {selectedTeacherClass.schedule?.[0]?.day || 'No schedule'}</p>
+            <div className="roster-stats">
+              <span>{selectedTeacherClass.students?.length || 0} students</span>
+              <span>{selectedTeacherClass.attendanceRate || 0}% attendance</span>
+            </div>
+
+            <div className="teacher-role-list">
+              <strong>Teachers</strong>
+              <p>{(selectedTeacherClass.teachers || [selectedTeacherClass.teacher]).map((teacher) => teacher?.name || teacher?.email || 'Teacher').join(', ')}</p>
+              <strong>Lab Teachers</strong>
+              <p>{(selectedTeacherClass.labTeachers || []).length > 0 ? selectedTeacherClass.labTeachers.map((teacher) => teacher?.name || teacher?.email || 'Lab Teacher').join(', ') : 'None assigned'}</p>
+            </div>
+
+            <form className="settings-form compact-settings-form" onSubmit={handleAddStudentToClass}>
+              <label>
+                Add Student by Email
+                <input
+                  type="email"
+                  value={studentRosterForm.email}
+                  onChange={(event) => setStudentRosterForm({ email: event.target.value })}
+                  placeholder="student@email.com"
+                />
+              </label>
+              <button className="button button-dark" type="submit" disabled={rosterActionState.loading}>
+                {rosterActionState.loading ? 'Adding...' : 'Add Student'}
+              </button>
+            </form>
+
+            {rosterActionState.error && <p className="auth-feedback auth-error">{rosterActionState.error}</p>}
+            {rosterActionState.success && <p className="auth-feedback auth-success">{rosterActionState.success}</p>}
+
+            <div className="teacher-student-list">
+              {(selectedTeacherClass.students || []).length > 0 ? (
+                selectedTeacherClass.students.map((student) => (
+                  <div className="teacher-student-item" key={student._id || student.id}>
+                    <div>
+                      <strong>{student.name || 'Student'}</strong>
+                      <p>{student.email}</p>
+                      <small>{student.department || student.year || student.section || 'Student profile'}</small>
+                    </div>
+                    <button className="panel-add" type="button" onClick={() => handleRemoveStudentFromClass(student._id || student.id)}>
+                      Remove
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p style={{ margin: 0, color: 'var(--text-secondary)' }}>No students enrolled yet.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {(user.role === 'student' || user.role === 'teacher') && (
           <form className="settings-form" style={{ marginTop: '1.25rem' }} onSubmit={handleJoinClassByCode}>
             <label>
-              Join With Class Code
+              {user.role === 'teacher' ? 'Link Class With Code' : 'Join With Class Code'}
               <input
                 type="text"
                 value={joinClassForm.code}
                 onChange={(event) => setJoinClassForm({ code: event.target.value.toUpperCase() })}
-                placeholder="Enter class code"
+                placeholder="Enter class code (e.g. SVVV1)"
                 required
               />
             </label>
             <button className="button button-dark" type="submit" disabled={actionLoading}>
-              {actionLoading ? 'Joining...' : 'Join Class'}
+              {actionLoading ? 'Linking...' : user.role === 'teacher' ? 'Link Class' : 'Join Class'}
             </button>
           </form>
         )}
@@ -1864,6 +2818,81 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           </div>
           <strong>{attendanceOverview.present} / {attendanceOverview.total} present</strong>
         </div>
+
+        {user.role === 'teacher' ? (
+          <>
+            <form className="settings-form compact-settings-form" style={{ marginTop: '1rem' }} onSubmit={handleCreateAttendanceQr}>
+              <label>
+                QR Class
+                <select
+                  value={qrAttendanceForm.classId}
+                  onChange={(event) => setQrAttendanceForm((current) => ({ ...current, classId: event.target.value }))}
+                >
+                  {activeTeacherClasses.map((item) => (
+                    <option key={item._id} value={item._id}>{item.code} - {item.subject}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Range (meters)
+                <input
+                  type="number"
+                  min="10"
+                  max="1000"
+                  value={qrAttendanceForm.rangeMeters}
+                  onChange={(event) => setQrAttendanceForm((current) => ({ ...current, rangeMeters: event.target.value }))}
+                />
+              </label>
+              <label>
+                Expires In (minutes)
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={qrAttendanceForm.expiresMinutes}
+                  onChange={(event) => setQrAttendanceForm((current) => ({ ...current, expiresMinutes: event.target.value }))}
+                />
+              </label>
+              <button className="button button-dark" type="button" onClick={handleCaptureTeacherLocation}>
+                Use My Class Location
+              </button>
+              <button className="button button-primary" type="submit" disabled={actionLoading || !qrAttendanceForm.latitude || !qrAttendanceForm.longitude}>
+                {actionLoading ? 'Generating QR...' : 'Generate Attendance QR'}
+              </button>
+            </form>
+
+            {activeQrSession && (
+              <div className="progress-summary-card" style={{ marginTop: '1rem' }}>
+                <p>Active QR Session</p>
+                <img src={activeQrSession.qrImageUrl} alt="Attendance QR" style={{ width: '100%', maxWidth: '240px', borderRadius: '12px' }} />
+                <strong>Token: {activeQrSession.token}</strong>
+                <small className="small-muted">Valid till {new Date(activeQrSession.expiresAt).toLocaleTimeString()}</small>
+              </div>
+            )}
+          </>
+        ) : (
+          <form className="settings-form compact-settings-form" style={{ marginTop: '1rem' }} onSubmit={handleSubmitQrAttendance}>
+            <label>
+              QR Token
+              <input
+                type="text"
+                value={studentQrForm.token}
+                onChange={(event) => setStudentQrForm((current) => ({ ...current, token: event.target.value.toUpperCase() }))}
+                placeholder="Enter token from class QR"
+                required
+              />
+            </label>
+            <button className="button button-dark" type="button" onClick={handleCaptureStudentLocation}>
+              Capture My Location
+            </button>
+            <button className="button button-primary" type="submit" disabled={actionLoading || !studentQrForm.latitude || !studentQrForm.longitude}>
+              {actionLoading ? 'Marking...' : 'Mark Attendance via QR'}
+            </button>
+          </form>
+        )}
+
+        {actionError && <p className="auth-feedback auth-error">{actionError}</p>}
+        {actionSuccess && <p className="auth-feedback auth-success">{actionSuccess}</p>}
       </article>
     </section>
   )
@@ -2370,6 +3399,8 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                 ? renderAssignmentsPage()
                 : activePage === 'attendance'
                   ? renderAttendancePage()
+                  : activePage === 'communication'
+                    ? renderCommunicationPage()
                   : activePage === 'calendar'
                     ? renderCalendarPage()
                   : activePage === 'performance' || activePage === 'analytics'
@@ -2383,19 +3414,19 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
 
           {actionModal && (user.role === 'teacher' || actionModal === 'submission') && (
             <div className="auth-overlay" onClick={closeActionModal}>
-              <section className="auth-modal" style={{ width: 'min(720px, calc(100% - 1rem))' }} onClick={(event) => event.stopPropagation()}>
+              <section className="auth-modal action-modal-shell" style={{ width: 'min(980px, calc(100% - 1rem))' }} onClick={(event) => event.stopPropagation()}>
                 <button className="auth-close" type="button" onClick={closeActionModal} aria-label="Close dialog">×</button>
                 <header className="auth-header">
-                  <h3>{actionModal === 'class' ? 'Create Class' : actionModal === 'assignment' ? 'Create Assignment' : actionModal === 'submission' ? 'Submit Assignment' : 'Mark Attendance'}</h3>
-                  <p>{actionModal === 'class' ? 'Create a new class card with schedule and room information.' : actionModal === 'assignment' ? 'Create a live assignment and attach it to a class.' : actionModal === 'submission' ? 'Upload your assignment file and include a short note.' : 'Save attendance for a class and update the records.'}</p>
+                  <h3>{actionModal === 'class' ? 'Create Class' : actionModal === 'assignment' ? 'Create Assignment' : actionModal === 'announcement' ? 'Post Class Update' : actionModal === 'submission' ? 'Submit Assignment' : 'Mark Attendance'}</h3>
+                  <p>{actionModal === 'class' ? 'Create a new class card with schedule and room information.' : actionModal === 'assignment' ? 'Create a live assignment and attach it to a class.' : actionModal === 'announcement' ? 'Send a visible update to selected students and classes.' : actionModal === 'submission' ? 'Upload your assignment file and include a short note.' : 'Save attendance for a class and update the records.'}</p>
                 </header>
 
                 {actionError && <p className="auth-feedback auth-error">{actionError}</p>}
                 {actionSuccess && <p className="auth-feedback auth-success">{actionSuccess}</p>}
 
                 {actionModal === 'class' ? (
-                  <form className="settings-form" onSubmit={handleCreateClass}>
-                    <label>
+                  <form className="settings-form action-form-grid" onSubmit={handleCreateClass}>
+                    <label className="field-span-2">
                       Class Name
                       <input
                         type="text"
@@ -2423,6 +3454,22 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         onChange={(event) => setClassForm((current) => ({ ...current, subject: event.target.value }))}
                         placeholder="Data Structures"
                         required
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Teachers (emails, comma separated)
+                      <textarea
+                        value={classForm.teachers}
+                        onChange={(event) => setClassForm((current) => ({ ...current, teachers: event.target.value }))}
+                        placeholder="teacher1@edutrack.com, teacher2@edutrack.com"
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Lab Teachers (emails, comma separated)
+                      <textarea
+                        value={classForm.labTeachers}
+                        onChange={(event) => setClassForm((current) => ({ ...current, labTeachers: event.target.value }))}
+                        placeholder="lab1@edutrack.com, lab2@edutrack.com"
                       />
                     </label>
                     <label>
@@ -2464,7 +3511,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         required
                       />
                     </label>
-                    <label>
+                    <label className="field-span-2">
                       Description
                       <textarea
                         value={classForm.description}
@@ -2472,12 +3519,69 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         placeholder="What will students learn in this class?"
                       />
                     </label>
-                    <button className="button button-dark" type="submit" disabled={actionLoading}>
+                    <button className="button button-dark field-span-2" type="submit" disabled={actionLoading}>
                       {actionLoading ? 'Saving...' : 'Save Class'}
                     </button>
                   </form>
+                ) : actionModal === 'announcement' ? (
+                  <form className="settings-form action-form-grid" onSubmit={handleCreateAnnouncement}>
+                    <label>
+                      Class
+                      <select
+                        value={announcementForm.classId}
+                        onChange={(event) => setAnnouncementForm((current) => ({ ...current, classId: event.target.value }))}
+                      >
+                        <option value="">All my classes</option>
+                        {activeTeacherClasses.map((item) => (
+                          <option key={item._id} value={item._id}>{item.code} - {item.subject}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Title
+                      <input
+                        type="text"
+                        value={announcementForm.title}
+                        onChange={(event) => setAnnouncementForm((current) => ({ ...current, title: event.target.value }))}
+                        placeholder="Class update title"
+                        required
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Message
+                      <textarea
+                        value={announcementForm.message}
+                        onChange={(event) => setAnnouncementForm((current) => ({ ...current, message: event.target.value }))}
+                        placeholder="Share homework, schedule changes, reminders, or class notes"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Category
+                      <input
+                        type="text"
+                        value={announcementForm.category}
+                        onChange={(event) => setAnnouncementForm((current) => ({ ...current, category: event.target.value }))}
+                        placeholder="Class Update"
+                      />
+                    </label>
+                    <label>
+                      Priority
+                      <select
+                        value={announcementForm.priority}
+                        onChange={(event) => setAnnouncementForm((current) => ({ ...current, priority: event.target.value }))}
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </label>
+                    <button className="button button-dark field-span-2" type="submit" disabled={actionLoading}>
+                      {actionLoading ? 'Posting...' : 'Post Update'}
+                    </button>
+                  </form>
                 ) : actionModal === 'assignment' ? (
-                  <form className="settings-form" onSubmit={handleCreateAssignment}>
+                  <form className="settings-form action-form-grid" onSubmit={handleCreateAssignment}>
                     <label>
                       Class
                       <select
@@ -2489,7 +3593,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         ))}
                       </select>
                     </label>
-                    <label>
+                    <label className="field-span-2">
                       Title
                       <input
                         type="text"
@@ -2499,7 +3603,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         required
                       />
                     </label>
-                    <label>
+                    <label className="field-span-2">
                       Description
                       <textarea
                         value={assignmentForm.description}
@@ -2528,12 +3632,12 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         required
                       />
                     </label>
-                    <button className="button button-dark" type="submit" disabled={actionLoading}>
+                    <button className="button button-dark field-span-2" type="submit" disabled={actionLoading}>
                       {actionLoading ? 'Saving...' : 'Save Assignment'}
                     </button>
                   </form>
                 ) : actionModal === 'attendance' ? (
-                  <form className="settings-form" onSubmit={handleMarkAttendance}>
+                  <form className="settings-form action-form-grid" onSubmit={handleMarkAttendance}>
                     <label>
                       Class
                       <select
@@ -2564,7 +3668,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                       />
                     </label>
 
-                    <div style={{ display: 'grid', gap: '0.75rem' }}>
+                    <div className="field-span-2" style={{ display: 'grid', gap: '0.75rem' }}>
                       {(activeTeacherClasses.find((item) => item._id === attendanceForm.classId) || activeTeacherClasses[0])?.students?.length > 0 ? (
                         (activeTeacherClasses.find((item) => item._id === attendanceForm.classId) || activeTeacherClasses[0]).students.map((student) => (
                           <div
@@ -2595,17 +3699,17 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                       )}
                     </div>
 
-                    <button className="button button-dark" type="submit" disabled={actionLoading}>
+                    <button className="button button-dark field-span-2" type="submit" disabled={actionLoading}>
                       {actionLoading ? 'Saving...' : 'Save Attendance'}
                     </button>
                   </form>
                 ) : (
-                  <form className="settings-form" onSubmit={handleSubmitAssignment}>
-                    <label>
+                  <form className="settings-form action-form-grid" onSubmit={handleSubmitAssignment}>
+                    <label className="field-span-2">
                       Assignment
                       <input type="text" value={submissionModalAssignment?.title || ''} readOnly />
                     </label>
-                    <label>
+                    <label className="field-span-2">
                       Submission Note
                       <textarea
                         value={submissionForm.note}
@@ -2613,7 +3717,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         placeholder="Add a short summary of your work"
                       />
                     </label>
-                    <label>
+                    <label className="field-span-2">
                       Upload File
                       <input
                         type="file"
@@ -2623,8 +3727,8 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                         }}
                       />
                     </label>
-                    {submissionForm.fileName && <p style={{ margin: 0, color: 'var(--text-secondary)' }}>Selected: {submissionForm.fileName}</p>}
-                    <button className="button button-dark" type="submit" disabled={actionLoading}>
+                    {submissionForm.fileName && <p className="field-span-2" style={{ margin: 0, color: 'var(--text-secondary)' }}>Selected: {submissionForm.fileName}</p>}
+                    <button className="button button-dark field-span-2" type="submit" disabled={actionLoading}>
                       {actionLoading ? 'Uploading...' : 'Upload Assignment'}
                     </button>
                   </form>
