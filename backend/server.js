@@ -2913,76 +2913,110 @@ app.post('/api/setup/multi-subject', async (req, res) => {
         }
       }
 
-      // Create attendance records for the past 15 days
+      // Create attendance records for the past 60 days (2 months) in the expected records[] format
       const today = new Date()
-      for (let d = 0; d < 15; d += 1) {
+      const studentAttendanceTotals = new Map()
+
+      for (const student of students) {
+        studentAttendanceTotals.set(String(student._id || student.id), { present: 0, total: 0 })
+      }
+
+      for (let d = 0; d < 60; d += 1) {
         const attendanceDate = new Date(today)
         attendanceDate.setDate(today.getDate() - d)
 
-        for (let s = 0; s < students.length; s += 1) {
-          const student = students[s]
-          const isPresent = Math.random() > 0.2 // 80% attendance rate
+        const records = students.map((student) => {
+          const studentId = student._id || student.id
+          const random = Math.random()
+          const status = random > 0.2 ? 'present' : random > 0.1 ? 'late' : 'absent'
 
-          if (mongoReady) {
-            await Attendance.create({
-              class: classRecord._id,
-              student: student._id,
-              date: attendanceDate,
-              status: isPresent ? 'present' : 'absent',
-              markedAt: new Date().toISOString(),
-            })
-          } else {
-            enqueueMemoryRecord('attendance', {
-              _id: createMemoryId('attendance'),
-              class: classRecord.id,
-              student: student.id,
-              date: attendanceDate.toISOString(),
-              status: isPresent ? 'present' : 'absent',
-              markedAt: new Date().toISOString(),
-            })
+          const stat = studentAttendanceTotals.get(String(studentId))
+          if (stat) {
+            stat.total += 1
+            if (status === 'present') {
+              stat.present += 1
+            }
           }
+
+          return {
+            student: studentId,
+            status,
+          }
+        })
+
+        if (mongoReady) {
+          await Attendance.create({
+            class: classRecord._id,
+            date: attendanceDate,
+            records,
+          })
+        } else {
+          enqueueMemoryRecord('attendance', {
+            _id: createMemoryId('attendance'),
+            class: classRecord._id,
+            date: attendanceDate.toISOString(),
+            records,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })
         }
       }
 
-      // Create course analytics
-      const presentCount = Math.floor(students.length * 0.8)
+      // Create course analytics snapshots for last 60 days
       if (mongoReady) {
-        await CourseAnalytics.create({
-          course: classRecord._id,
-          date: new Date(),
-          totalStudents: students.length,
-          presentCount,
-          absentCount: students.length - presentCount,
-          attendancePercentage: (presentCount / students.length) * 100,
-          insights: {
-            highestAbsent: students.slice(0, 3).map((s) => s._id),
-            perfectAttendance: students.slice(15, 20).map((s) => s._id),
-          },
-        })
+        for (let d = 0; d < 60; d += 1) {
+          const analyticDate = new Date(today)
+          analyticDate.setDate(today.getDate() - d)
+          const dayAttendance = 72 + Math.floor(Math.random() * 23) // 72% - 94%
+          const dayPresentCount = Math.round((dayAttendance / 100) * students.length)
+
+          await CourseAnalytics.create({
+            course: classRecord._id,
+            date: analyticDate,
+            totalStudents: students.length,
+            presentCount: dayPresentCount,
+            absentCount: students.length - dayPresentCount,
+            attendancePercentage: dayAttendance,
+            insights: {
+              highestAbsent: students.slice(0, 3).map((s) => s._id),
+              perfectAttendance: students.slice(15, 20).map((s) => s._id),
+            },
+          })
+        }
       }
 
-      // Create student performance records
+      // Create student performance records with monthly breakdown for last 2 months
       for (let s = 0; s < students.length; s += 1) {
         const student = students[s]
-        const performance = Math.random() * 100
-        const attendancePerc = (presentCount / students.length) * 100
-        const grade = performance > 80 ? 'A' : performance > 70 ? 'B' : performance > 60 ? 'C' : 'D'
+        const studentId = student._id || student.id
+        const attendanceStats = studentAttendanceTotals.get(String(studentId)) || { present: 0, total: 0 }
+        const attendancePerc = attendanceStats.total > 0
+          ? Math.round((attendanceStats.present / attendanceStats.total) * 100)
+          : 0
+        const performance = Math.max(55, Math.min(98, Math.round((attendancePerc * 0.6) + (Math.random() * 40))))
+        const grade = performance > 85 ? 'A' : performance > 75 ? 'B' : performance > 65 ? 'C' : 'D'
 
         if (mongoReady) {
           await StudentPerformance.create({
-            student: student._id,
+            student: studentId,
             course: classRecord._id,
             attendancePercentage: attendancePerc,
             averageGrade: grade,
             totalAssignments: 8,
-            submittedAssignments: Math.floor(Math.random() * 8),
+            submittedAssignments: Math.floor(5 + Math.random() * 4),
             performanceIndex: performance,
             monthlyData: [
+              {
+                month: 'March 2026',
+                attendance: Math.max(60, attendancePerc - Math.floor(Math.random() * 8)),
+                grade,
+                assignments: Math.floor(3 + Math.random() * 3),
+              },
               {
                 month: 'April 2026',
                 attendance: attendancePerc,
                 grade,
-                assignments: Math.floor(Math.random() * 8),
+                assignments: Math.floor(4 + Math.random() * 4),
               },
             ],
           })
