@@ -5,7 +5,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD 
 const TOKEN_KEY = 'edutrack_token'
 const USER_KEY = 'edutrack_user'
 const THEME_KEY = 'edutrack_theme'
-const AUTH_REQUEST_TIMEOUT_MS = 12000
+const AUTH_REQUEST_TIMEOUT_MS = 8000
+const AUTH_HEALTHCHECK_TIMEOUT_MS = 2200
 
 const normalizeRole = (value) => (value === 'teacher' ? 'teacher' : 'student')
 const gradeScoreMap = { 'A': 10, 'A-': 9, 'B+': 8, 'B': 7, 'B-': 6, 'C': 5, 'F': 0 }
@@ -212,6 +213,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
   const [authSuccess, setAuthSuccess] = useState('')
+  const [authServerHealth, setAuthServerHealth] = useState({ checking: false, ok: null })
   const [session, setSession] = useState(() => {
     const storedToken = localStorage.getItem(TOKEN_KEY)
     const storedUser = localStorage.getItem(USER_KEY)
@@ -306,11 +308,29 @@ function App() {
     }
   }, [authOpen])
 
-  const openAuth = (mode) => {
+  const checkAuthServer = async () => {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), AUTH_HEALTHCHECK_TIMEOUT_MS)
+
+    setAuthServerHealth({ checking: true, ok: null })
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/health`, { signal: controller.signal })
+      setAuthServerHealth({ checking: false, ok: response.ok })
+      return response.ok
+    } catch {
+      setAuthServerHealth({ checking: false, ok: false })
+      return false
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+  }
+
+  const openAuth = async (mode) => {
     setAuthMode(mode)
     setAuthError('')
     setAuthSuccess('')
     setAuthOpen(true)
+    await checkAuthServer()
   }
 
   const enterDashboard = (data) => {
@@ -369,6 +389,12 @@ function App() {
     setAuthSuccess('')
     setAuthLoading(true)
 
+    if (authServerHealth.ok === false) {
+      setAuthLoading(false)
+      setAuthError('Backend server is not reachable. Start backend at http://localhost:5000 and try again.')
+      return
+    }
+
     const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login'
     const payload =
       authMode === 'signup'
@@ -398,6 +424,12 @@ function App() {
     setAuthError('')
     setAuthSuccess('')
     setAuthLoading(true)
+
+    if (authServerHealth.ok === false) {
+      setAuthLoading(false)
+      setAuthError('Backend server is not reachable. Start backend at http://localhost:5000 and try again.')
+      return
+    }
 
     try {
       const { response, data } = await fetchAuthJson(`${API_BASE_URL}/api/auth/google`, {
@@ -510,20 +542,6 @@ function App() {
         </nav>
 
         <div className="topbar-actions">
-          <button
-            className="button button-secondary button-small login-icon-button"
-            type="button"
-            onClick={() => openAuth('login')}
-            aria-label="Open login popup"
-            title="Login"
-          >
-            <span className="login-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.31 0-6 1.79-6 4v1h12v-1c0-2.21-2.69-4-6-4Z" />
-              </svg>
-            </span>
-            <span className="login-text">Login</span>
-          </button>
           <button className="button button-dark button-small" type="button" onClick={() => openAuth('signup')}>
             Get Started
           </button>
@@ -548,6 +566,20 @@ function App() {
                 Get Started
               </button>
               <a className="button button-secondary" href="#features">Learn More</a>
+              <button
+                className="button button-secondary login-icon-button"
+                type="button"
+                onClick={() => openAuth('login')}
+                aria-label="Open login popup"
+                title="Login"
+              >
+                <span className="login-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                    <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.31 0-6 1.79-6 4v1h12v-1c0-2.21-2.69-4-6-4Z" />
+                  </svg>
+                </span>
+                <span className="login-text">Login</span>
+              </button>
             </div>
             <div className="hero-tags" aria-label="Platform highlights">
               <span className="hero-tag float-soft">Project Tracking</span>
@@ -718,22 +750,31 @@ function App() {
               <span className="google-mark" aria-hidden="true">G</span>
               Continue with Google
             </button>
+            <div className="auth-server-status" role="status" aria-live="polite">
+              {authServerHealth.checking
+                ? 'Checking backend connection...'
+                : authServerHealth.ok === false
+                  ? 'Backend offline'
+                  : authServerHealth.ok === true
+                    ? 'Backend online'
+                    : 'Connection status unknown'}
+            </div>
             {authError && <p className="auth-feedback auth-error">{authError}</p>}
             {authSuccess && <p className="auth-feedback auth-success">{authSuccess}</p>}
-            <form className="auth-form" onSubmit={handleAuthSubmit}>
+            <form className="auth-form" onSubmit={handleAuthSubmit} autoComplete="off">
               {authMode === 'signup' && (
                 <label>
                   Full Name
-                  <input name="name" type="text" placeholder="Enter your full name" value={formData.name} onChange={updateField} required />
+                  <input name="name" type="text" placeholder="Enter your full name" value={formData.name} onChange={updateField} autoComplete="off" required />
                 </label>
               )}
               <label>
                 Email
-                <input name="email" type="email" placeholder="name@example.com" value={formData.email} onChange={updateField} required />
+                <input name="email" type="email" placeholder="name@example.com" value={formData.email} onChange={updateField} autoComplete="off" required />
               </label>
               <label>
                 Password
-                <input name="password" type="password" placeholder="Enter your password" value={formData.password} onChange={updateField} required />
+                <input name="password" type="password" placeholder="Enter your password" value={formData.password} onChange={updateField} autoComplete="new-password" required />
               </label>
               {authMode === 'signup' && (
                 <div className="role-select" role="radiogroup" aria-label="Select role">
@@ -772,8 +813,12 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   const [attendanceData, setAttendanceData] = useState([])
   const [gradesData, setGradesData] = useState([])
   const [communicationFeed, setCommunicationFeed] = useState([])
-  const [chatForm, setChatForm] = useState({ message: '' })
+  const [chatForm, setChatForm] = useState({ message: '', recipientId: '' })
   const [doubtForm, setDoubtForm] = useState({ title: '', message: '' })
+  const [communicationFilter, setCommunicationFilter] = useState('all')
+  const [notificationItems, setNotificationItems] = useState([])
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [lastQuickAction, setLastQuickAction] = useState('')
   const [profileData, setProfileData] = useState(() => buildProfileFromUser(user))
   const [editingProfile, setEditingProfile] = useState(false)
   const [formData, setFormData] = useState(() => buildProfileFromUser(user))
@@ -831,6 +876,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     latitude: '',
     longitude: '',
   }))
+  const [selectedAttendanceSubject, setSelectedAttendanceSubject] = useState('ALL')
   const [selectedClassId, setSelectedClassId] = useState('')
   const [studentRosterForm, setStudentRosterForm] = useState({ email: '' })
   const [rosterActionState, setRosterActionState] = useState({ loading: false, error: '', success: '' })
@@ -897,14 +943,40 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   }, [themeMode])
 
   const parseJsonResponse = async (response) => {
+    if (response.status === 204) {
+      return {}
+    }
+
     const contentType = response.headers.get('content-type') || ''
 
     if (contentType.includes('application/json')) {
-      return response.json()
+      try {
+        return await response.json()
+      } catch {
+        return {}
+      }
     }
 
     const rawText = await response.text()
-    throw new Error(rawText || 'Unexpected server response')
+    if (!rawText) {
+      return {}
+    }
+
+    try {
+      return JSON.parse(rawText)
+    } catch {
+      return { message: rawText }
+    }
+  }
+
+  const toFriendlyError = (error, fallback) => {
+    if (error?.message === 'Failed to fetch') {
+      return 'Cannot connect to backend API. Please start backend on http://localhost:5000'
+    }
+    if (typeof error?.message === 'string' && error.message.includes('Cannot DELETE /api/attendance/')) {
+      return 'Attendance remove route is unavailable on current backend process. Restart backend server and try again.'
+    }
+    return error?.message || fallback
   }
 
   useEffect(() => {
@@ -919,7 +991,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       const fallbackProfile = buildProfileFromUser(user)
 
       try {
-        const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse, communicationResponse] = await Promise.all([
+        const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse, communicationResponse, notificationResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/dashboard/${user.id}/${user.role}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/classes?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/assignments?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
@@ -927,9 +999,10 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           fetch(`${API_BASE_URL}/api/grades?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/profile/${user.id}`, { headers, signal: controller.signal }),
           fetch(`${API_BASE_URL}/api/communication?role=${user.role}&userId=${user.id}`, { headers, signal: controller.signal }),
+          fetch(`${API_BASE_URL}/api/notifications?userId=${user.id}`, { headers, signal: controller.signal }),
         ])
 
-        const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult, communicationResult] = await Promise.all([
+        const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult, communicationResult, notificationResult] = await Promise.all([
           parseJsonResponse(dashboardResponse),
           parseJsonResponse(classesResponse),
           parseJsonResponse(assignmentsResponse),
@@ -937,6 +1010,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           parseJsonResponse(gradesResponse),
           parseJsonResponse(profileResponse),
           parseJsonResponse(communicationResponse),
+          parseJsonResponse(notificationResponse),
         ])
 
         if (cancelled) {
@@ -949,6 +1023,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         setAttendanceData(attendanceResponse.ok && Array.isArray(attendanceResult) ? attendanceResult : [])
         setGradesData(gradesResponse.ok && Array.isArray(gradesResult) ? gradesResult : [])
         setCommunicationFeed(communicationResponse.ok && Array.isArray(communicationResult) ? communicationResult : [])
+        setNotificationItems(notificationResponse.ok && Array.isArray(notificationResult) ? notificationResult : [])
         const resolvedProfile = profileResponse.ok && profileResult?.name ? profileResult : fallbackProfile
         setProfileData(resolvedProfile)
         setFormData(resolvedProfile)
@@ -968,6 +1043,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           setAttendanceData([])
           setGradesData([])
           setCommunicationFeed([])
+          setNotificationItems([])
           const fallbackProfile = buildProfileFromUser(user)
           setProfileData(fallbackProfile)
           setFormData(fallbackProfile)
@@ -975,7 +1051,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
             ...current,
             twoFactorEnabled: Boolean(fallbackProfile.twoFactorEnabled),
           }))
-          setPageError('Live data could not be loaded. Please check backend and database connectivity.')
+          setPageError(toFriendlyError(error, 'Live data could not be loaded. Please check backend and database connectivity.'))
         }
       } finally {
         if (!cancelled && !controller.signal.aborted) {
@@ -997,7 +1073,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     const fallbackProfile = buildProfileFromUser(user)
 
     try {
-      const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse, communicationResponse] = await Promise.all([
+      const [dashboardResponse, classesResponse, assignmentsResponse, attendanceResponse, gradesResponse, profileResponse, communicationResponse, notificationResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/api/dashboard/${user.id}/${user.role}`, { headers }),
         fetch(`${API_BASE_URL}/api/classes?role=${user.role}&userId=${user.id}`, { headers }),
         fetch(`${API_BASE_URL}/api/assignments?role=${user.role}&userId=${user.id}`, { headers }),
@@ -1005,9 +1081,10 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         fetch(`${API_BASE_URL}/api/grades?role=${user.role}&userId=${user.id}`, { headers }),
         fetch(`${API_BASE_URL}/api/profile/${user.id}`, { headers }),
         fetch(`${API_BASE_URL}/api/communication?role=${user.role}&userId=${user.id}`, { headers }),
+        fetch(`${API_BASE_URL}/api/notifications?userId=${user.id}`, { headers }),
       ])
 
-      const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult, communicationResult] = await Promise.all([
+      const [dashboardResult, classesResult, assignmentsResult, attendanceResult, gradesResult, profileResult, communicationResult, notificationResult] = await Promise.all([
         parseJsonResponse(dashboardResponse),
         parseJsonResponse(classesResponse),
         parseJsonResponse(assignmentsResponse),
@@ -1015,6 +1092,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         parseJsonResponse(gradesResponse),
         parseJsonResponse(profileResponse),
         parseJsonResponse(communicationResponse),
+        parseJsonResponse(notificationResponse),
       ])
 
       setPageData(dashboardResponse.ok && dashboardResult?.stats ? dashboardResult : emptyDashboardData)
@@ -1023,6 +1101,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       setAttendanceData(attendanceResponse.ok && Array.isArray(attendanceResult) ? attendanceResult : [])
       setGradesData(gradesResponse.ok && Array.isArray(gradesResult) ? gradesResult : [])
       setCommunicationFeed(communicationResponse.ok && Array.isArray(communicationResult) ? communicationResult : [])
+      setNotificationItems(notificationResponse.ok && Array.isArray(notificationResult) ? notificationResult : [])
       const resolvedProfile = profileResponse.ok && profileResult?.name ? profileResult : fallbackProfile
       setProfileData(resolvedProfile)
       setFormData(resolvedProfile)
@@ -1035,8 +1114,36 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       }
     } catch (error) {
       console.error('Refresh failed:', error)
+      setPageError(toFriendlyError(error, 'Failed to refresh latest dashboard data.'))
     }
   }
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      refreshAllData()
+    }, 20000)
+
+    return () => window.clearInterval(timer)
+  }, [user.id, user.role, token])
+
+  useEffect(() => {
+    if (!notificationOpen) {
+      return undefined
+    }
+
+    const handleOutsideClick = (event) => {
+      if (!event.target.closest('.notification-wrap')) {
+        setNotificationOpen(false)
+      }
+    }
+
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [notificationOpen])
+
+  useEffect(() => {
+    setNotificationOpen(false)
+  }, [activePage])
 
   const handleProfileUpdate = async () => {
     try {
@@ -1231,6 +1338,122 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     [classesData, selectedClassId]
   )
 
+  const teacherActorIds = useMemo(() => {
+    const ids = new Set()
+    classesData.forEach((cls) => {
+      if (cls?.teacher?._id || cls?.teacher) {
+        ids.add(String(cls?.teacher?._id || cls?.teacher))
+      }
+      ;(cls?.teachers || []).forEach((teacher) => ids.add(String(teacher?._id || teacher)))
+      ;(cls?.labTeachers || []).forEach((teacher) => ids.add(String(teacher?._id || teacher)))
+    })
+    return ids
+  }, [classesData])
+
+  const visibleNotifications = useMemo(() => {
+    const baseItems = Array.isArray(notificationItems) ? notificationItems : []
+    if (user.role === 'teacher') {
+      return baseItems
+    }
+    return baseItems.filter((item) => {
+      if (!item?.actor) {
+        return true
+      }
+      return teacherActorIds.has(String(item.actor?._id || item.actor))
+    })
+  }, [notificationItems, user.role, teacherActorIds])
+
+  const unreadNotificationCount = useMemo(
+    () => visibleNotifications.filter((item) => !item?.readAt).length,
+    [visibleNotifications]
+  )
+
+  const communicationRecipientOptions = useMemo(() => {
+    if (!selectedTeacherClass) {
+      return []
+    }
+
+    if (user.role === 'teacher') {
+      return (selectedTeacherClass.students || []).map((student) => ({
+        id: student?._id || student?.id,
+        label: `${student?.name || 'Student'} (${student?.email || 'no-email'})`,
+      }))
+    }
+
+    const teachers = [
+      ...(Array.isArray(selectedTeacherClass.teachers) ? selectedTeacherClass.teachers : []),
+      ...(Array.isArray(selectedTeacherClass.labTeachers) ? selectedTeacherClass.labTeachers : []),
+      selectedTeacherClass.teacher,
+    ]
+      .filter(Boolean)
+      .map((teacher) => ({
+        id: teacher?._id || teacher,
+        label: `${teacher?.name || 'Teacher'} (${teacher?.email || 'faculty'})`,
+      }))
+
+    const seen = new Set()
+    return teachers.filter((teacher) => {
+      const id = String(teacher.id || '')
+      if (!id || seen.has(id)) {
+        return false
+      }
+      seen.add(id)
+      return true
+    })
+  }, [selectedTeacherClass, user.role])
+
+  const filteredCommunicationFeed = useMemo(() => {
+    if (communicationFilter === 'all') {
+      return communicationFeed
+    }
+    if (communicationFilter === 'direct') {
+      return communicationFeed.filter((entry) => Boolean(entry?.recipient))
+    }
+    return communicationFeed.filter((entry) => entry?.type === communicationFilter)
+  }, [communicationFeed, communicationFilter])
+
+  const markNotificationsRead = async (notificationId = null) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/notifications/mark-read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ userId: user.id, notificationId }),
+      })
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to update notifications')
+      }
+
+      setNotificationItems((current) =>
+        current.map((item) => (
+          !notificationId || String(item._id) === String(notificationId)
+            ? { ...item, readAt: item.readAt || new Date().toISOString() }
+            : item
+        ))
+      )
+    } catch (error) {
+      setPageError(toFriendlyError(error, 'Failed to update notifications'))
+    }
+  }
+
+  const runTeacherQuickAction = (actionKey) => {
+    setLastQuickAction(actionKey)
+    if (actionKey === 'class') {
+      openClassModal()
+    } else if (actionKey === 'assignment') {
+      openAssignmentModal()
+    } else if (actionKey === 'attendance') {
+      openAttendanceModal()
+    } else if (actionKey === 'announcement') {
+      openAnnouncementModal()
+    }
+
+    window.setTimeout(() => setLastQuickAction(''), 280)
+  }
+
   useEffect(() => {
     const targetClassId = selectedTeacherClass?._id || qrAttendanceForm.classId
     if (!targetClassId) {
@@ -1335,6 +1558,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         body: JSON.stringify({
           classId: selectedTeacherClass._id,
           senderId: user.id,
+          recipientId: chatForm.recipientId || null,
           message: chatForm.message.trim(),
         }),
       })
@@ -1344,7 +1568,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         throw new Error(result.message || 'Failed to send chat message')
       }
 
-      setChatForm({ message: '' })
+      setChatForm({ message: '', recipientId: '' })
       await refreshAllData()
     } catch (error) {
       setActionError(error.message || 'Failed to send chat message')
@@ -1449,7 +1673,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       setActionSuccess('Assignment created successfully')
       await refreshAllData()
     } catch (error) {
-      setActionError(error.message || 'Failed to create assignment')
+      setActionError(toFriendlyError(error, 'Failed to create assignment'))
     } finally {
       setActionLoading(false)
     }
@@ -1457,6 +1681,21 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
 
   const handleCreateClass = async (event) => {
     event.preventDefault()
+    const teacherTokens = String(classForm.teachers || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+    const labTeacherTokens = String(classForm.labTeachers || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+
+    const invalidTeacherEntry = [...teacherTokens, ...labTeacherTokens].find((entry) => !entry.includes('@'))
+    if (invalidTeacherEntry) {
+      setActionError('Use valid teacher email addresses only (example: arun.kumar@edutrack.com).')
+      return
+    }
+
     setActionLoading(true)
     setActionError('')
     setActionSuccess('')
@@ -1490,7 +1729,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       setActionSuccess('Class created successfully')
       await refreshAllData()
     } catch (error) {
-      setActionError(error.message || 'Failed to create class')
+      setActionError(toFriendlyError(error, 'Failed to create class'))
     } finally {
       setActionLoading(false)
     }
@@ -1568,7 +1807,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       setActionSuccess('Attendance saved successfully')
       await refreshAllData()
     } catch (error) {
-      setActionError(error.message || 'Failed to mark attendance')
+      setActionError(toFriendlyError(error, 'Failed to mark attendance'))
     } finally {
       setActionLoading(false)
     }
@@ -1623,7 +1862,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       setActiveQrSession(result)
       setActionSuccess(`QR created for ${result.classCode}. Students within ${result.rangeMeters}m can mark attendance.`)
     } catch (error) {
-      setActionError(error.message || 'Failed to create attendance QR')
+      setActionError(toFriendlyError(error, 'Failed to create attendance QR'))
     } finally {
       setActionLoading(false)
     }
@@ -1677,7 +1916,122 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       setStudentQrForm((current) => ({ ...current, token: '' }))
       await refreshAllData()
     } catch (error) {
-      setActionError(error.message || 'Failed to mark attendance via QR')
+      setActionError(toFriendlyError(error, 'Failed to mark attendance via QR'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleRemoveClass = async (classId) => {
+    if (!classId || !window.confirm('Remove this class and all related records?')) {
+      return
+    }
+
+    setActionLoading(true)
+    setActionError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/classes/${classId}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to remove class')
+      }
+
+      if (selectedClassId === classId) {
+        setSelectedClassId('')
+      }
+      setActionSuccess('Class removed successfully')
+      await refreshAllData()
+    } catch (error) {
+      setActionError(toFriendlyError(error, 'Failed to remove class'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleRemoveAssignment = async (assignmentId) => {
+    if (!assignmentId || !window.confirm('Remove this assignment?')) {
+      return
+    }
+
+    setActionLoading(true)
+    setActionError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/assignments/${assignmentId}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to remove assignment')
+      }
+
+      setActionSuccess('Assignment removed successfully')
+      await refreshAllData()
+    } catch (error) {
+      setActionError(toFriendlyError(error, 'Failed to remove assignment'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleRemoveAttendance = async (attendanceId) => {
+    if (!attendanceId || !window.confirm('Remove this attendance record?')) {
+      return
+    }
+
+    setActionLoading(true)
+    setActionError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/attendance/${attendanceId}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to remove attendance')
+      }
+
+      setActionSuccess('Attendance removed successfully')
+      await refreshAllData()
+    } catch (error) {
+      setActionError(toFriendlyError(error, 'Failed to remove attendance'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleRemoveGrade = async (gradeId) => {
+    if (!gradeId || !window.confirm('Remove this grade record?')) {
+      return
+    }
+
+    setActionLoading(true)
+    setActionError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/grades/${gradeId}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to remove grade')
+      }
+
+      setActionSuccess('Grade removed successfully')
+      await refreshAllData()
+    } catch (error) {
+      setActionError(toFriendlyError(error, 'Failed to remove grade'))
     } finally {
       setActionLoading(false)
     }
@@ -1972,6 +2326,31 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     }
   }, [attendanceData])
 
+  const normalizeSubjectLabel = (value) => {
+    const cleaned = String(value || '').trim()
+    return cleaned || 'Class'
+  }
+
+  const attendanceSubjects = useMemo(() => {
+    const names = Array.from(new Set(
+      (attendanceData || []).map((item) => normalizeSubjectLabel(item?.class?.subject)).filter(Boolean)
+    ))
+    return ['ALL', ...names]
+  }, [attendanceData])
+
+  useEffect(() => {
+    if (!attendanceSubjects.includes(selectedAttendanceSubject)) {
+      setSelectedAttendanceSubject('ALL')
+    }
+  }, [attendanceSubjects, selectedAttendanceSubject])
+
+  const filteredAttendanceData = useMemo(() => {
+    if (selectedAttendanceSubject === 'ALL') {
+      return attendanceData
+    }
+    return attendanceData.filter((item) => normalizeSubjectLabel(item?.class?.subject) === selectedAttendanceSubject)
+  }, [attendanceData, selectedAttendanceSubject])
+
   const gradeOverview = useMemo(() => {
     const totals = gradesData.reduce(
       (acc, grade) => {
@@ -2008,24 +2387,83 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     return [68, 82, 57, 76][index % 4]
   }
 
+  const stableTopStats = useMemo(() => {
+    const dashboardStats = Array.isArray(pageData?.stats) ? pageData.stats.slice(0, 4) : []
+    if (dashboardStats.length === 4) {
+      return dashboardStats
+    }
+
+    if (user.role === 'teacher') {
+      return [
+        {
+          title: 'Active Students',
+          value: String(classesData.reduce((sum, cls) => sum + (cls?.students?.length || 0), 0)),
+          trend: 'Across all courses',
+          tone: 'blue',
+        },
+        {
+          title: 'Active Classes',
+          value: String(classesData.length),
+          trend: 'Running',
+          tone: 'amber',
+        },
+        {
+          title: 'Pending Assignments',
+          value: String(assignmentsData.length),
+          trend: 'To review',
+          tone: 'green',
+        },
+        {
+          title: 'Attendance Rate',
+          value: `${attendanceOverview.rate}%`,
+          trend: 'Live pulse',
+          tone: 'violet',
+        },
+      ]
+    }
+
+    return [
+      {
+        title: 'My Courses',
+        value: String(classesData.length),
+        trend: 'Enrolled',
+        tone: 'blue',
+      },
+      {
+        title: 'Assignments',
+        value: String(assignmentsData.length),
+        trend: 'Overall',
+        tone: 'amber',
+      },
+      {
+        title: 'Attendance',
+        value: `${attendanceOverview.rate}%`,
+        trend: 'Current',
+        tone: 'green',
+      },
+      {
+        title: 'Average Score',
+        value: gradeOverview.average > 0 ? `${gradeOverview.average}%` : 'N/A',
+        trend: 'Latest',
+        tone: 'violet',
+      },
+    ]
+  }, [pageData?.stats, user.role, classesData, assignmentsData, attendanceOverview.rate, gradeOverview.average])
+
   const renderDashboardSkeleton = () => (
     <section className="dashboard-overview dashboard-skeleton-wrap">
-      <div className="stats-grid-modern">
-        {[1, 2, 3, 4].map((item) => (
-          <article className="dashboard-panel metric-card" key={`skeleton-metric-${item}`}>
-            <div className="skeleton-line skeleton-title"></div>
-            <div className="skeleton-line skeleton-value"></div>
-          </article>
-        ))}
-      </div>
+      <article className="dashboard-panel metric-card" key="skeleton-main-panel">
+        <div className="skeleton-line skeleton-title"></div>
+        <div className="skeleton-line skeleton-value"></div>
+      </article>
     </section>
   )
 
   const renderDashboardOverview = () => (
     <section className="dashboard-overview">
       <div className="stats-grid-modern">
-        {(pageData?.stats || []).map((item) => (
-          <article className="dashboard-panel metric-card" key={item.title}>
+        {stableTopStats.map((item, index) => (
+          <article className="dashboard-panel metric-card" key={`${item.title}-${index}`}>
             <div className="metric-row">
               <p>{item.title}</p>
               <span className={`metric-wave wave-${item.tone || 'blue'}`}></span>
@@ -2035,26 +2473,6 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           </article>
         ))}
       </div>
-
-      {user.role === 'teacher' && (
-        <div className="dashboard-row dashboard-home-row">
-          <article className="dashboard-panel section-card">
-            <div className="panel-header panel-header-strong">
-              <h3>Teacher Control Center</h3>
-              <span className="pill progress">Live control</span>
-            </div>
-            <p style={{ marginTop: 0, color: 'var(--text-secondary)' }}>
-              Create classes, publish updates, and manage attendance without leaving the dashboard.
-            </p>
-            <div className="teacher-control-grid">
-              <button className="button button-dark" type="button" onClick={openClassModal}>Create Class</button>
-              <button className="button button-dark" type="button" onClick={openAssignmentModal}>Create Assignment</button>
-              <button className="button button-dark" type="button" onClick={openAttendanceModal}>Mark Attendance</button>
-              <button className="button button-dark" type="button" onClick={openAnnouncementModal}>Post Update</button>
-            </div>
-          </article>
-        </div>
-      )}
 
       {user.role === 'teacher' && (
         <div className="dashboard-row dashboard-home-row">
@@ -2449,15 +2867,38 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       <article className="dashboard-panel work-main">
         <div className="panel-header panel-header-strong">
           <h3>Communication Feed</h3>
-          <span className="pill progress">{communicationFeed.length} updates</span>
+          <span className="pill progress">{filteredCommunicationFeed.length} updates</span>
+        </div>
+        <div className="class-switcher" style={{ marginTop: '0.65rem' }}>
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'chat', label: 'Chats' },
+            { key: 'doubt', label: 'Doubts' },
+            { key: 'direct', label: 'Direct' },
+          ].map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={`class-switcher-pill ${communicationFilter === item.key ? 'active' : ''}`}
+              onClick={() => setCommunicationFilter(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
         <div className="dashboard-list">
-          {communicationFeed.length > 0 ? (
-            communicationFeed.slice(0, 40).map((entry) => (
+          {filteredCommunicationFeed.length > 0 ? (
+            filteredCommunicationFeed.slice(0, 60).map((entry) => (
               <div className="dashboard-list-item" key={entry._id || `${entry.title}-${entry.message}-${entry.createdAt}`}>
                 <div>
-                  <h4>{entry.type === 'doubt' ? 'Doubt Thread' : 'Chat'} {entry.title ? `· ${entry.title}` : ''}</h4>
+                  <h4>
+                    {entry.type === 'doubt' ? 'Doubt Thread' : 'Chat'} {entry.title ? `· ${entry.title}` : ''}
+                    {entry.recipient ? ' · Direct' : ' · Class'}
+                  </h4>
                   <p>{entry.message}</p>
+                  <small className="small-muted">
+                    {entry.class?.code || entry.class?.subject || 'Class'} · {entry.sender?.name || entry.sender?.email || 'Member'} · {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'now'}
+                  </small>
                 </div>
                 <span className={`pill ${entry.type === 'doubt' && entry.status !== 'resolved' ? 'pending' : 'progress'}`}>
                   {entry.status || entry.type}
@@ -2480,19 +2921,40 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         <div className="panel-header panel-header-strong">
           <h3>Start Discussion</h3>
         </div>
+
         <form className="settings-form compact-settings-form" onSubmit={handleSendClassChat}>
           <label>
-            Class Chat Message
+            Class
+            <select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}>
+              {(classesData || []).map((item) => (
+                <option key={item._id} value={item._id}>{item.code} - {item.subject}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Send To
+            <select
+              value={chatForm.recipientId}
+              onChange={(event) => setChatForm((current) => ({ ...current, recipientId: event.target.value }))}
+            >
+              <option value="">Whole class</option>
+              {communicationRecipientOptions.map((recipient) => (
+                <option key={recipient.id} value={recipient.id}>{recipient.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {chatForm.recipientId ? 'Direct Message' : 'Class Chat Message'}
             <textarea
               value={chatForm.message}
-              onChange={(event) => setChatForm({ message: event.target.value })}
+              onChange={(event) => setChatForm((current) => ({ ...current, message: event.target.value }))}
               rows={3}
-              placeholder="Share quick class update"
+              placeholder={chatForm.recipientId ? 'Write a specific message' : 'Share quick class update'}
               required
             />
           </label>
           <button className="button button-dark" type="submit" disabled={actionLoading || !selectedTeacherClass?._id}>
-            Send Chat
+            {chatForm.recipientId ? 'Send Direct Message' : 'Send Chat'}
           </button>
         </form>
 
@@ -2571,6 +3033,11 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                   <span style={{ width: `${Math.max(cls.attendanceRate, 8)}%` }}></span>
                 </div>
                 <small>{cls.sessions} sessions tracked · {cls.attendanceRate}% engagement</small>
+                {user.role === 'teacher' && (
+                  <div className="pro-card-actions">
+                    <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveClass(cls._id)}>Remove</button>
+                  </div>
+                )}
               </div>
             ))
           ) : (
@@ -2722,7 +3189,10 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                 <small>{assignment.submissions?.length || 0} submissions tracked</small>
                 <div className="pro-card-actions">
                   {user.role === 'teacher' ? (
-                    <span className="pill progress">{assignment.submissions?.length || 0} Submitted</span>
+                    <>
+                      <span className="pill progress">{assignment.submissions?.length || 0} Submitted</span>
+                      <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveAssignment(assignment._id)}>Remove</button>
+                    </>
                   ) : (
                     <button className="panel-add" type="button" onClick={() => openSubmissionModal(assignment)}>
                       {submittedByCurrentUser(assignment) ? 'Update Upload' : 'Upload'}
@@ -2790,13 +3260,25 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           <h3>Attendance Records</h3>
           {user.role === 'teacher' && <button className="panel-add" type="button" onClick={openAttendanceModal}>+ Mark Attendance</button>}
         </div>
+        <div className="class-switcher" style={{ marginTop: '0.6rem' }}>
+          {attendanceSubjects.map((subject) => (
+            <button
+              key={subject}
+              type="button"
+              className={`class-switcher-pill ${selectedAttendanceSubject === subject ? 'active' : ''}`}
+              onClick={() => setSelectedAttendanceSubject(subject)}
+            >
+              {subject === 'ALL' ? 'All Subjects' : subject}
+            </button>
+          ))}
+        </div>
         <div className="pro-cards-grid">
-          {attendanceData.length > 0 ? (
-            attendanceData.map((record) => (
+          {filteredAttendanceData.length > 0 ? (
+            filteredAttendanceData.map((record) => (
               <div className="pro-attendance-card" key={record._id || record.date}>
                 <div className="pro-card-head">
                   <div>
-                    <h4>{record.class?.subject || 'Class'}</h4>
+                    <h4>{normalizeSubjectLabel(record.class?.subject)}</h4>
                     <p>{new Date(record.date).toLocaleDateString()}</p>
                   </div>
                   <span className="pill progress">{record.records?.length || 0} learners</span>
@@ -2806,6 +3288,11 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                   <small>L: {record.records?.filter((r) => r.status === 'late').length || 0}</small>
                   <small>A: {record.records?.filter((r) => r.status === 'absent').length || 0}</small>
                 </div>
+                {user.role === 'teacher' && (
+                  <div className="pro-card-actions">
+                    <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveAttendance(record._id)}>Remove</button>
+                  </div>
+                )}
               </div>
             ))
           ) : (
@@ -2944,6 +3431,11 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                 <div className="progress-track compact">
                   <span style={{ width: `${Math.max(Math.round((Number(grade.internals || 0) + Number(grade.finals || 0)) / 2), 8)}%` }}></span>
                 </div>
+                {user.role === 'teacher' && (
+                  <div className="pro-card-actions">
+                    <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveGrade(grade._id)}>Remove</button>
+                  </div>
+                )}
               </div>
             ))
           ) : (
@@ -3410,6 +3902,47 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           </div>
 
           <div className="dashboard-topbar-actions">
+            <div className="notification-wrap">
+              <button
+                className="dashboard-icon-button notification-bell"
+                type="button"
+                aria-label="Notifications"
+                title="Notifications"
+                onClick={() => setNotificationOpen((current) => !current)}
+              >
+                <span aria-hidden="true">🔔</span>
+                {unreadNotificationCount > 0 && <em className="notification-count">{Math.min(unreadNotificationCount, 99)}</em>}
+              </button>
+              {notificationOpen && (
+                <div className="notification-dropdown">
+                  <div className="notification-head">
+                    <strong>{user.role === 'teacher' ? 'Notifications' : 'Teacher Notices'}</strong>
+                    <button className="panel-add" type="button" onClick={() => markNotificationsRead(null)}>Mark all read</button>
+                  </div>
+                  <div className="notification-list">
+                    {visibleNotifications.length > 0 ? (
+                      visibleNotifications.slice(0, 8).map((item) => (
+                        <button
+                          key={item._id || `${item.title}-${item.createdAt}`}
+                          type="button"
+                          className={`notification-item ${item.readAt ? 'read' : ''}`}
+                          onClick={() => markNotificationsRead(item._id)}
+                        >
+                          <strong>{item.title}</strong>
+                          <p>{item.message}</p>
+                          <small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'now'}</small>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="notification-item read">
+                        <strong>No notifications</strong>
+                        <p>Teacher updates will appear here.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <button className="dashboard-profile dashboard-profile-button" type="button" aria-label="Open profile" title="Open profile" onClick={() => setActivePage('profile')}>
               <img alt={profileData.name} src={`https://ui-avatars.com/api/?name=${encodeURIComponent(profileData.name)}&background=111827&color=ffffff`} />
             </button>

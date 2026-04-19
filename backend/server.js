@@ -188,7 +188,7 @@ const notificationSchema = new mongoose.Schema(
     actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     type: {
       type: String,
-      enum: ['class', 'assignment', 'attendance', 'grade', 'announcement', 'submission', 'system'],
+      enum: ['class', 'assignment', 'attendance', 'grade', 'announcement', 'submission', 'communication', 'system'],
       default: 'system',
     },
     title: { type: String, required: true, trim: true },
@@ -575,8 +575,14 @@ async function resolveUserReferenceList(values) {
 
   for (const identifier of identifiers) {
     if (mongoReady) {
+      const emailIdentifier = String(identifier).toLowerCase()
+      const orConditions = [{ email: emailIdentifier }]
+      if (mongoose.Types.ObjectId.isValid(identifier)) {
+        orConditions.push({ _id: identifier })
+      }
+
       const user = (await User.findOne({
-        $or: [{ _id: identifier }, { email: identifier.toLowerCase() }],
+        $or: orConditions,
       }).select('_id email role name').lean()) || null
       if (user) {
         resolved.push(String(user._id))
@@ -1550,6 +1556,11 @@ app.post('/api/classes', async (req, res) => {
     const firstSlot = Array.isArray(schedule) ? schedule[0] : null
     const primaryTeacherIds = await resolveUserReferenceList([teacher])
     const mainTeacherId = primaryTeacherIds[0]
+    const autoEnrolledStudentIds = mongoReady
+      ? (await User.find({ role: { $regex: /^student$/i } }).select('_id').lean()).map((item) => item._id)
+      : Array.from(users.values())
+          .filter((item) => normalizeRole(item.role) === 'student')
+          .map((item) => item.id)
 
     if (!mainTeacherId) {
       return res.status(400).json({ message: 'A valid primary teacher is required' })
@@ -1589,6 +1600,7 @@ app.post('/api/classes', async (req, res) => {
         teacher: mainTeacherId,
         teachers: collaboratorTeacherIds,
         labTeachers: labTeacherIds,
+        students: autoEnrolledStudentIds,
         credits,
         description,
         schedule,
@@ -1602,7 +1614,7 @@ app.post('/api/classes', async (req, res) => {
         teacher: mainTeacherId,
         teachers: collaboratorTeacherIds,
         labTeachers: labTeacherIds,
-        students: [],
+        students: autoEnrolledStudentIds,
         credits,
         description,
         schedule: Array.isArray(schedule) ? schedule : [],
@@ -1659,6 +1671,45 @@ app.put('/api/classes/:classId', async (req, res) => {
     res.json(updatedClass)
   } catch (error) {
     res.status(500).json({ message: 'Failed to update class', error: error.message })
+  }
+})
+
+app.delete('/api/classes/:classId', async (req, res) => {
+  try {
+    const { classId } = req.params
+    const classDoc = mongoReady ? await Class.findById(classId).lean() : findMemoryClassById(classId)
+
+    if (!classDoc) {
+      return res.status(404).json({ message: 'Class not found' })
+    }
+
+    if (mongoReady) {
+      await Promise.all([
+        Assignment.deleteMany({ class: classId }),
+        Attendance.deleteMany({ class: classId }),
+        Grade.deleteMany({ class: classId }),
+        CourseAnalytics.deleteMany({ course: classId }),
+        StudentPerformance.deleteMany({ course: classId }),
+        AttendanceReport.deleteMany({ course: classId }),
+        SmartSchedule.deleteMany({ course: classId }),
+        AttendanceQrSession.deleteMany({ class: classId }),
+        Announcement.deleteMany({ class: classId }),
+        Communication.deleteMany({ class: classId }),
+        Class.findByIdAndDelete(classId),
+      ])
+    } else {
+      memoryStore.assignments = memoryStore.assignments.filter((item) => String(item.class) !== String(classId))
+      memoryStore.attendance = memoryStore.attendance.filter((item) => String(item.class) !== String(classId))
+      memoryStore.grades = memoryStore.grades.filter((item) => String(item.class) !== String(classId))
+      memoryStore.attendanceQrSessions = memoryStore.attendanceQrSessions.filter((item) => String(item.class) !== String(classId))
+      memoryStore.announcements = memoryStore.announcements.filter((item) => String(item.class) !== String(classId))
+      memoryStore.communications = memoryStore.communications.filter((item) => String(item.class) !== String(classId))
+      memoryStore.classes = memoryStore.classes.filter((item) => String(item._id) !== String(classId))
+    }
+
+    res.json({ message: 'Class removed successfully' })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to remove class', error: error.message })
   }
 })
 
@@ -2120,6 +2171,27 @@ app.put('/api/assignments/:assignmentId/grade', async (req, res) => {
   }
 })
 
+app.delete('/api/assignments/:assignmentId', async (req, res) => {
+  try {
+    const { assignmentId } = req.params
+    const assignment = mongoReady
+      ? await Assignment.findByIdAndDelete(assignmentId).lean()
+      : memoryStore.assignments.find((item) => String(item._id) === String(assignmentId))
+
+    if (!assignment) {
+      return res.status(404).json({ message: 'Assignment not found' })
+    }
+
+    if (!mongoReady) {
+      memoryStore.assignments = memoryStore.assignments.filter((item) => String(item._id) !== String(assignmentId))
+    }
+
+    res.json({ message: 'Assignment removed successfully' })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to remove assignment', error: error.message })
+  }
+})
+
 // Attendance Routes
 app.get('/api/attendance', async (req, res) => {
   try {
@@ -2186,6 +2258,27 @@ app.post('/api/attendance', async (req, res) => {
     res.status(201).json(newAttendance)
   } catch (error) {
     res.status(500).json({ message: 'Failed to create attendance record', error: error.message })
+  }
+})
+
+app.delete('/api/attendance/:attendanceId', async (req, res) => {
+  try {
+    const { attendanceId } = req.params
+    const attendanceRow = mongoReady
+      ? await Attendance.findByIdAndDelete(attendanceId).lean()
+      : memoryStore.attendance.find((item) => String(item._id) === String(attendanceId))
+
+    if (!attendanceRow) {
+      return res.status(404).json({ message: 'Attendance record not found' })
+    }
+
+    if (!mongoReady) {
+      memoryStore.attendance = memoryStore.attendance.filter((item) => String(item._id) !== String(attendanceId))
+    }
+
+    res.json({ message: 'Attendance record removed successfully' })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to remove attendance record', error: error.message })
   }
 })
 
@@ -2540,6 +2633,27 @@ app.put('/api/grades/:gradeId', async (req, res) => {
     res.json(updatedGrade)
   } catch (error) {
     res.status(500).json({ message: 'Failed to update grade', error: error.message })
+  }
+})
+
+app.delete('/api/grades/:gradeId', async (req, res) => {
+  try {
+    const { gradeId } = req.params
+    const grade = mongoReady
+      ? await Grade.findByIdAndDelete(gradeId).lean()
+      : memoryStore.grades.find((item) => String(item._id) === String(gradeId))
+
+    if (!grade) {
+      return res.status(404).json({ message: 'Grade not found' })
+    }
+
+    if (!mongoReady) {
+      memoryStore.grades = memoryStore.grades.filter((item) => String(item._id) !== String(gradeId))
+    }
+
+    res.json({ message: 'Grade removed successfully' })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to remove grade', error: error.message })
   }
 })
 
