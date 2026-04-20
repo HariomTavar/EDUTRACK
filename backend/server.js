@@ -938,6 +938,12 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'edutrack-api', mongo: mongoReady })
 })
 
+app.get('/', (_req, res) => {
+  res.status(200).send(
+    'EduTrack backend is running. Use the frontend URL (usually http://localhost:5173) and API health at /api/health.'
+  )
+})
+
 // User Profile Routes
 app.get('/api/profile/:userId', async (req, res) => {
   try {
@@ -3881,17 +3887,16 @@ async function startServer() {
     mongoReady = false
   }
 
-  const listenOnPort = (port, retries = 0) => {
+  const listenOnPort = (port) => {
     const server = app.listen(port, () => {
       console.log(`EduTrack backend running on http://localhost:${port}`)
       console.log(`MongoDB: ${mongoReady ? 'Connected' : 'Not connected (using in-memory storage)'}`)
     })
 
     server.on('error', (error) => {
-      if (error.code === 'EADDRINUSE' && retries < 5) {
-        const nextPort = Number(port) + 1
-        console.warn(`Port ${port} is busy, retrying on ${nextPort}...`)
-        server.close(() => listenOnPort(nextPort, retries + 1))
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${port} is busy. Stop the process using that port and restart EduTrack backend on the same port.`)
+        console.error('Mac/Linux quick fix: lsof -i :5000 && kill -9 <PID>')
         return
       }
 
