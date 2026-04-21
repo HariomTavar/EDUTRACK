@@ -20,6 +20,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/edutrack'
 const GLOBAL_MULTI_CLASS_CODE = 'BTECH-MULTI-2026'
 const AI_API_URL = process.env.AI_API_URL || ''
 const AI_API_KEY = process.env.AI_API_KEY || ''
+const AUTO_SEED_ON_EMPTY_DB = String(process.env.AUTO_SEED_ON_EMPTY_DB || 'true').toLowerCase() !== 'false'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const uploadsDir = path.join(__dirname, 'uploads')
@@ -503,6 +504,175 @@ function toUserResponse(user) {
 
 function normalizeRole(role, fallback = 'student') {
   return role === 'teacher' ? 'teacher' : role === 'student' ? 'student' : fallback
+}
+
+async function ensureBootstrapData() {
+  if (!AUTO_SEED_ON_EMPTY_DB) {
+    return
+  }
+
+  if (mongoReady) {
+    const [userCount, classCount] = await Promise.all([
+      User.countDocuments(),
+      Class.countDocuments(),
+    ])
+
+    if (userCount > 0 || classCount > 0) {
+      return
+    }
+  } else if (users.size > 0 || memoryStore.classes.length > 0) {
+    return
+  }
+
+  const teacherData = [
+    { name: 'Arun Kumar', email: 'arun.kumar@edutrack.com', department: 'Computer Science' },
+    { name: 'Priya Singh', email: 'priya.singh@edutrack.com', department: 'Mechanical Engineering' },
+    { name: 'Vikram Patel', email: 'vikram.patel@edutrack.com', department: 'Electronics Engineering' },
+    { name: 'Deepak Sharma', email: 'deepak.sharma@edutrack.com', department: 'Civil Engineering' },
+    { name: 'Neha Gupta', email: 'neha.gupta@edutrack.com', department: 'Electrical Engineering' },
+  ]
+
+  const courseData = [
+    { name: 'Data Structures & Algorithms', code: 'CSE-201', credits: 4 },
+    { name: 'Thermodynamics', code: 'ME-204', credits: 4 },
+    { name: 'Circuit Analysis', code: 'ECE-202', credits: 4 },
+    { name: 'Structural Design', code: 'CE-203', credits: 4 },
+    { name: 'Power Systems', code: 'EE-205', credits: 4 },
+  ]
+
+  const studentPrefixes = [
+    'Arjun', 'Bhavna', 'Chirag', 'Deepika', 'Eshan',
+    'Fiona', 'Gaurav', 'Hina', 'Ishaan', 'Jiya',
+    'Karan', 'Lakshya', 'Misha', 'Nikhil', 'Olivia',
+    'Priya', 'Quintus', 'Rajeev', 'Simran', 'Taran',
+  ]
+
+  const passwordHash = await bcrypt.hash('password123', 10)
+
+  const teachers = []
+  for (const teacherInfo of teacherData) {
+    const teacher = mongoReady
+      ? await User.create({
+          name: teacherInfo.name,
+          email: teacherInfo.email,
+          passwordHash,
+          role: 'teacher',
+          department: teacherInfo.department,
+          year: 'All',
+          section: 'A, B, C',
+        })
+      : await saveUser({
+          name: teacherInfo.name,
+          email: teacherInfo.email,
+          passwordHash,
+          role: 'teacher',
+          authProvider: 'local',
+          department: teacherInfo.department,
+          year: 'All',
+          section: 'A, B, C',
+        })
+    teachers.push(teacher)
+  }
+
+  const students = []
+  for (let index = 0; index < studentPrefixes.length; index += 1) {
+    const student = mongoReady
+      ? await User.create({
+          name: `${studentPrefixes[index]} Kumar`,
+          email: `student${index + 1}@edutrack.com`,
+          passwordHash,
+          role: 'student',
+          department: 'Multi-Discipline',
+          year: '2nd Year',
+          section: 'B',
+        })
+      : await saveUser({
+          name: `${studentPrefixes[index]} Kumar`,
+          email: `student${index + 1}@edutrack.com`,
+          passwordHash,
+          role: 'student',
+          authProvider: 'local',
+          department: 'Multi-Discipline',
+          year: '2nd Year',
+          section: 'B',
+        })
+    students.push(student)
+  }
+
+  const studentIds = students.map((student) => student._id || student.id)
+
+  for (let index = 0; index < courseData.length; index += 1) {
+    const course = courseData[index]
+    const teacher = teachers[index]
+    const teacherId = teacher._id || teacher.id
+
+    if (mongoReady) {
+      await Class.create({
+        name: course.name,
+        code: course.code,
+        subject: course.name,
+        teacher: teacherId,
+        teachers: [teacherId],
+        labTeachers: [],
+        students: studentIds,
+        credits: course.credits,
+        description: `${course.name} - bootstrap dataset`,
+        schedule: [
+          { day: 'Monday', time: '10:00 AM - 11:30 AM', room: `${course.code}-101` },
+          { day: 'Wednesday', time: '2:00 PM - 3:30 PM', room: `${course.code}-101` },
+        ],
+      })
+    } else {
+      enqueueMemoryRecord('classes', {
+        _id: createMemoryId('class'),
+        name: course.name,
+        code: course.code,
+        subject: course.name,
+        teacher: teacherId,
+        teachers: [teacherId],
+        labTeachers: [],
+        students: studentIds,
+        credits: course.credits,
+        description: `${course.name} - bootstrap dataset`,
+        schedule: [
+          { day: 'Monday', time: '10:00 AM - 11:30 AM', room: `${course.code}-101` },
+          { day: 'Wednesday', time: '2:00 PM - 3:30 PM', room: `${course.code}-101` },
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    }
+  }
+
+  console.log('Bootstrap data initialized (5 classes, 5 teachers, 20 students).')
+}
+
+async function getBootstrapCounts() {
+  if (mongoReady) {
+    const [usersCount, classesCount, assignmentsCount, attendanceCount, gradesCount] = await Promise.all([
+      User.countDocuments(),
+      Class.countDocuments(),
+      Assignment.countDocuments(),
+      Attendance.countDocuments(),
+      Grade.countDocuments(),
+    ])
+
+    return {
+      users: usersCount,
+      classes: classesCount,
+      assignments: assignmentsCount,
+      attendance: attendanceCount,
+      grades: gradesCount,
+    }
+  }
+
+  return {
+    users: users.size,
+    classes: memoryStore.classes.length,
+    assignments: memoryStore.assignments.length,
+    attendance: memoryStore.attendance.length,
+    grades: memoryStore.grades.length,
+  }
 }
 
 function normalizeIdList(value) {
@@ -3261,6 +3431,28 @@ app.post('/api/setup/multi-subject', async (req, res) => {
   }
 })
 
+app.post('/api/setup/bootstrap', async (_req, res) => {
+  try {
+    const before = await getBootstrapCounts()
+    await ensureBootstrapData()
+    const after = await getBootstrapCounts()
+
+    res.json({
+      success: true,
+      message: 'Bootstrap setup processed successfully',
+      mongoConnected: mongoReady,
+      before,
+      after,
+      notes: {
+        behavior: 'Sample data is added only when user/class data is empty.',
+        disableFlag: 'Set AUTO_SEED_ON_EMPTY_DB=false to disable startup auto-bootstrap.',
+      },
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to run bootstrap setup', error: error.message })
+  }
+})
+
 app.post('/api/seed', async (req, res) => {
   try {
     if (!mongoReady) {
@@ -3885,6 +4077,12 @@ async function startServer() {
   } catch (error) {
     console.warn(`Mongo connection failed, falling back to in-memory storage: ${error.message}`)
     mongoReady = false
+  }
+
+  try {
+    await ensureBootstrapData()
+  } catch (error) {
+    console.warn(`Bootstrap data initialization skipped: ${error.message}`)
   }
 
   const listenOnPort = (port) => {

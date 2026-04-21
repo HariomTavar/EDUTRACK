@@ -2842,6 +2842,45 @@ main.dashboard-main {
   }
 }
 
+@media (max-width: 1280px) {
+  .stats-grid-modern {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pro-cards-grid,
+  .overview-cards,
+  .settings-panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-panel {
+    padding: 0.82rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .work-page-grid,
+  .profile-summary-grid,
+  .profile-detail-grid,
+  .settings-edit-grid,
+  .settings-quick-strip,
+  .ai-command-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-invite-item,
+  .teacher-student-item,
+  .dashboard-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .teacher-student-item .panel-add,
+  .teacher-invite-item .panel-add {
+    align-self: stretch;
+  }
+}
+
 @media (max-width: 640px) {
   .topbar {
     width: min(100%, calc(100% - 0.8rem));
@@ -2973,6 +3012,34 @@ main.dashboard-main {
 
   .assignment-meta {
     justify-items: start;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-copy h1 {
+    font-size: clamp(1.9rem, 11vw, 2.5rem);
+    line-height: 1.08;
+  }
+
+  .hero-actions {
+    gap: 0.5rem;
+  }
+
+  .hero-actions .button {
+    width: 100%;
+  }
+
+  .dashboard-shell {
+    padding: 0.55rem;
+  }
+
+  .dashboard-panel {
+    border-radius: 14px;
+  }
+
+  .panel-add,
+  .button {
+    min-height: 2.2rem;
   }
 }
 
