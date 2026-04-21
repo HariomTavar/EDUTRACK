@@ -208,6 +208,7 @@ const communicationSchema = new mongoose.Schema(
     recipient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     title: { type: String, default: '' },
     message: { type: String, required: true, trim: true },
+    priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     status: { type: String, enum: ['open', 'resolved'], default: 'open' },
     replies: [
       {
@@ -1530,6 +1531,10 @@ app.get('/api/communication', async (req, res) => {
 
     const entries = mongoReady
       ? await Communication.find({ class: { $in: scopedClassIds } })
+        .populate('class', 'code subject name')
+        .populate('sender', 'name email role')
+        .populate('recipient', 'name email role')
+        .populate('replies.sender', 'name email role')
         .sort({ createdAt: -1 })
         .limit(200)
         .lean()
@@ -1546,10 +1551,14 @@ app.get('/api/communication', async (req, res) => {
 
 app.post('/api/communication/chat', async (req, res) => {
   try {
-    const { classId, senderId, recipientId, message } = req.body
+    const { classId, senderId, recipientId, message, priority } = req.body
     if (!classId || !senderId || !message) {
       return res.status(400).json({ message: 'classId, senderId and message are required' })
     }
+
+    const normalizedPriority = ['low', 'medium', 'high'].includes(String(priority || '').toLowerCase())
+      ? String(priority).toLowerCase()
+      : 'medium'
 
     const payload = {
       class: classId,
@@ -1558,6 +1567,7 @@ app.post('/api/communication/chat', async (req, res) => {
       recipient: recipientId || null,
       title: recipientId ? 'Direct chat' : 'Class chat',
       message: String(message).trim(),
+      priority: normalizedPriority,
       status: 'open',
       replies: [],
     }
@@ -1579,9 +1589,27 @@ app.post('/api/communication/chat', async (req, res) => {
           type: 'communication',
           title: 'New chat message',
           message: String(message).trim(),
-          metadata: { classId, communicationId: created._id },
+          metadata: { classId, communicationId: created._id, channel: 'direct', priority: normalizedPriority },
         },
       ])
+    } else {
+      const classDoc = mongoReady ? await Class.findById(classId).lean() : findMemoryClassById(classId)
+      const classMemberIds = classDoc
+        ? uniqueIds([...(classDoc.students || []), ...classTeacherIds(classDoc)])
+        : []
+
+      const recipients = classMemberIds
+        .filter((memberId) => String(memberId) !== String(senderId))
+        .map((memberId) => ({
+          recipient: memberId,
+          actor: senderId,
+          type: 'communication',
+          title: 'Class chat update',
+          message: String(message).trim(),
+          metadata: { classId, communicationId: created._id, channel: 'class', priority: normalizedPriority },
+        }))
+
+      await createNotifications(recipients)
     }
 
     res.status(201).json(created)

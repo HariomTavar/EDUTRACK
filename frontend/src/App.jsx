@@ -813,8 +813,9 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
   const [attendanceData, setAttendanceData] = useState([])
   const [gradesData, setGradesData] = useState([])
   const [communicationFeed, setCommunicationFeed] = useState([])
-  const [chatForm, setChatForm] = useState({ message: '', recipientId: '' })
+  const [chatForm, setChatForm] = useState({ message: '', recipientId: '', priority: 'medium' })
   const [doubtForm, setDoubtForm] = useState({ title: '', message: '' })
+  const [replyDrafts, setReplyDrafts] = useState({})
   const [communicationFilter, setCommunicationFilter] = useState('all')
   const [notificationItems, setNotificationItems] = useState([])
   const [notificationOpen, setNotificationOpen] = useState(false)
@@ -1414,6 +1415,46 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     return communicationFeed.filter((entry) => entry?.type === communicationFilter)
   }, [communicationFeed, communicationFilter])
 
+  const communicationSummary = useMemo(() => {
+    const rows = Array.isArray(filteredCommunicationFeed) ? filteredCommunicationFeed : []
+    const directCount = rows.filter((entry) => Boolean(entry?.recipient)).length
+    const classCount = rows.filter((entry) => !entry?.recipient && entry?.type === 'chat').length
+    const openDoubts = rows.filter((entry) => entry?.type === 'doubt' && entry?.status !== 'resolved').length
+    const highPriority = rows.filter((entry) => String(entry?.priority || '').toLowerCase() === 'high').length
+
+    return {
+      directCount,
+      classCount,
+      openDoubts,
+      highPriority,
+    }
+  }, [filteredCommunicationFeed])
+
+  const teacherManagedHighlights = useMemo(() => {
+    const rows = Array.isArray(communicationFeed) ? communicationFeed : []
+    return rows
+      .filter((entry) => {
+        const senderId = String(entry?.sender?._id || entry?.sender || '')
+        const sentByTeacher = teacherActorIds.has(senderId)
+        return sentByTeacher || (user.role === 'teacher' && senderId === String(user.id))
+      })
+      .slice(0, 8)
+  }, [communicationFeed, teacherActorIds, user.role, user.id])
+
+  const highlightedNotifications = useMemo(() => {
+    const rows = Array.isArray(visibleNotifications) ? visibleNotifications : []
+    return rows
+      .map((item) => ({
+        ...item,
+        isHighlighted:
+          !item?.readAt &&
+          (item?.type === 'communication' ||
+            item?.type === 'announcement' ||
+            String(item?.metadata?.priority || '').toLowerCase() === 'high'),
+      }))
+      .sort((left, right) => Number(right.isHighlighted) - Number(left.isHighlighted))
+  }, [visibleNotifications])
+
   const markNotificationsRead = async (notificationId = null) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/notifications/mark-read`, {
@@ -1646,6 +1687,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           classId: selectedTeacherClass._id,
           senderId: user.id,
           recipientId: chatForm.recipientId || null,
+          priority: chatForm.priority || 'medium',
           message: chatForm.message.trim(),
         }),
       })
@@ -1655,7 +1697,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
         throw new Error(result.message || 'Failed to send chat message')
       }
 
-      setChatForm({ message: '', recipientId: '' })
+      setChatForm((current) => ({ ...current, message: '', recipientId: '' }))
       await refreshAllData()
     } catch (error) {
       setActionError(error.message || 'Failed to send chat message')
@@ -1699,6 +1741,52 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     } finally {
       setActionLoading(false)
     }
+  }
+
+  const handleReplyToCommunication = async (entryId, { markResolved = false } = {}) => {
+    const message = String(replyDrafts[entryId] || '').trim()
+    if (!entryId || !message) {
+      return
+    }
+
+    setActionLoading(true)
+    setActionError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/communication/${entryId}/reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          senderId: user.id,
+          message,
+          markResolved,
+        }),
+      })
+
+      const result = await parseJsonResponse(response)
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to send reply')
+      }
+
+      setReplyDrafts((current) => ({ ...current, [entryId]: '' }))
+      setActionSuccess(markResolved ? 'Reply sent and thread resolved' : 'Reply sent successfully')
+      await refreshAllData()
+    } catch (error) {
+      setActionError(error.message || 'Failed to reply in thread')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const applyCommunicationTemplate = (template) => {
+    setChatForm((current) => ({
+      ...current,
+      message: template.message,
+      priority: template.priority,
+      recipientId: template.directOnly ? (current.recipientId || communicationRecipientOptions[0]?.id || '') : '',
+    }))
   }
 
   const openAttendanceModal = () => {
@@ -2459,6 +2547,41 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     }
   }, [gradesData])
 
+  const atRiskStudents = useMemo(() => {
+    if (user.role !== 'teacher') {
+      return []
+    }
+
+    return teacherStudentProgressRows
+      .filter((student) => {
+        const score = Number(student?.averageScore || 0)
+        const assignmentGap = Number(student?.totalAssignments || 0) - Number(student?.submittedAssignments || 0)
+        return Number(student?.attendanceRate || 0) < 75 || score < 55 || assignmentGap >= 2
+      })
+      .slice(0, 6)
+  }, [teacherStudentProgressRows, user.role])
+
+  const studentActionPlan = useMemo(() => {
+    if (user.role !== 'student') {
+      return []
+    }
+
+    const plan = []
+    if (attendanceOverview.rate < 80) {
+      plan.push(`Raise attendance from ${attendanceOverview.rate}% to 85%+ by attending all upcoming sessions.`)
+    }
+    if (assignmentOverview.total > 0 && assignmentOverview.completion < 75) {
+      plan.push(`Complete pending assignments this week (${assignmentOverview.submitted}/${assignmentOverview.total} submitted).`)
+    }
+    if (gradeOverview.average > 0 && gradeOverview.average < 70) {
+      plan.push(`Target two revision blocks for low-score subjects to move above ${Math.max(75, gradeOverview.average + 8)}%.`)
+    }
+    if (plan.length === 0) {
+      plan.push('Performance is stable. Keep consistency and try one advanced challenge assignment this week.')
+    }
+    return plan.slice(0, 3)
+  }, [user.role, attendanceOverview.rate, assignmentOverview.total, assignmentOverview.completion, assignmentOverview.submitted, gradeOverview.average])
+
   const inferPercentFromValue = (value, index = 0) => {
     if (typeof value === 'string') {
       const match = value.match(/\d+/)
@@ -3125,6 +3248,24 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
           <h3>Communication Feed</h3>
           <span className="pill progress">{filteredCommunicationFeed.length} updates</span>
         </div>
+        <div className="communication-summary-grid">
+          <div className="communication-summary-card">
+            <span>Direct</span>
+            <strong>{communicationSummary.directCount}</strong>
+          </div>
+          <div className="communication-summary-card">
+            <span>Class Broadcast</span>
+            <strong>{communicationSummary.classCount}</strong>
+          </div>
+          <div className="communication-summary-card">
+            <span>Open Doubts</span>
+            <strong>{communicationSummary.openDoubts}</strong>
+          </div>
+          <div className="communication-summary-card">
+            <span>High Priority</span>
+            <strong>{communicationSummary.highPriority}</strong>
+          </div>
+        </div>
         <div className="class-switcher" style={{ marginTop: '0.65rem' }}>
           {[
             { key: 'all', label: 'All' },
@@ -3155,10 +3296,50 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                   <small className="small-muted">
                     {entry.class?.code || entry.class?.subject || 'Class'} · {entry.sender?.name || entry.sender?.email || 'Member'} · {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'now'}
                   </small>
+                  {entry.type === 'doubt' && (
+                    <>
+                      {(entry.replies || []).length > 0 && (
+                        <small className="small-muted" style={{ display: 'block', marginTop: '0.3rem' }}>
+                          Latest reply: {(entry.replies[entry.replies.length - 1]?.sender?.name || entry.replies[entry.replies.length - 1]?.sender?.email || 'Member')} · {(entry.replies[entry.replies.length - 1]?.message || '').slice(0, 72)}
+                        </small>
+                      )}
+                      <div className="thread-reply-box">
+                        <textarea
+                          rows={2}
+                          placeholder="Reply to this doubt thread..."
+                          value={replyDrafts[entry._id] || ''}
+                          onChange={(event) => setReplyDrafts((current) => ({ ...current, [entry._id]: event.target.value }))}
+                        />
+                        <div className="thread-reply-actions">
+                          <button
+                            className="panel-add"
+                            type="button"
+                            disabled={actionLoading || !String(replyDrafts[entry._id] || '').trim()}
+                            onClick={() => handleReplyToCommunication(entry._id, { markResolved: false })}
+                          >
+                            Reply
+                          </button>
+                          <button
+                            className="panel-add"
+                            type="button"
+                            disabled={actionLoading || !String(replyDrafts[entry._id] || '').trim()}
+                            onClick={() => handleReplyToCommunication(entry._id, { markResolved: true })}
+                          >
+                            Reply + Resolve
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <span className={`pill ${entry.type === 'doubt' && entry.status !== 'resolved' ? 'pending' : 'progress'}`}>
-                  {entry.status || entry.type}
-                </span>
+                <div className="communication-feed-tags">
+                  <span className={`pill ${String(entry?.priority || '').toLowerCase() === 'high' ? 'pending' : 'todo'}`}>
+                    {String(entry?.priority || 'medium').toUpperCase()}
+                  </span>
+                  <span className={`pill ${entry.type === 'doubt' && entry.status !== 'resolved' ? 'pending' : 'progress'}`}>
+                    {entry.status || entry.type}
+                  </span>
+                </div>
               </div>
             ))
           ) : (
@@ -3176,6 +3357,52 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
       <aside className="dashboard-panel work-side">
         <div className="panel-header panel-header-strong">
           <h3>Start Discussion</h3>
+        </div>
+
+        {teacherManagedHighlights.length > 0 && (
+          <div className="teacher-highlight-list">
+            <h4>Teacher Managed Highlights</h4>
+            {teacherManagedHighlights.slice(0, 4).map((entry) => (
+              <div className="teacher-highlight-item" key={`highlight-${entry._id || entry.createdAt}`}>
+                <strong>{entry.recipient ? 'Direct follow-up' : 'Class update'}</strong>
+                <p>{entry.message}</p>
+                <small>{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'now'}</small>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="teacher-highlight-list">
+          <h4>Smart Message Templates</h4>
+          <div className="template-grid">
+            {[
+              {
+                key: 'attendance-alert',
+                label: 'Attendance Alert',
+                message: 'Please improve attendance this week. Reach out if you need support with schedule planning.',
+                priority: 'high',
+                directOnly: false,
+              },
+              {
+                key: 'assignment-reminder',
+                label: 'Assignment Reminder',
+                message: 'Reminder: submit pending assignment before deadline to avoid late penalty.',
+                priority: 'medium',
+                directOnly: false,
+              },
+              {
+                key: 'direct-guidance',
+                label: 'Direct Guidance',
+                message: 'I reviewed your progress. Let us meet after class for a short improvement plan.',
+                priority: 'high',
+                directOnly: true,
+              },
+            ].map((template) => (
+              <button key={template.key} className="panel-add" type="button" onClick={() => applyCommunicationTemplate(template)}>
+                {template.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <form className="settings-form compact-settings-form" onSubmit={handleSendClassChat}>
@@ -3200,6 +3427,17 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
             </select>
           </label>
           <label>
+            Priority
+            <select
+              value={chatForm.priority}
+              onChange={(event) => setChatForm((current) => ({ ...current, priority: event.target.value }))}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+          <label>
             {chatForm.recipientId ? 'Direct Message' : 'Class Chat Message'}
             <textarea
               value={chatForm.message}
@@ -3209,6 +3447,9 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
               required
             />
           </label>
+          <small className="small-muted">
+            {chatForm.recipientId ? 'Only selected recipient gets this direct message notification.' : 'This sends a class-wide communication notification to members.'}
+          </small>
           <button className="button button-dark" type="submit" disabled={actionLoading || !selectedTeacherClass?._id}>
             {chatForm.recipientId ? 'Send Direct Message' : 'Send Chat'}
           </button>
@@ -3686,87 +3927,156 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     </section>
   )
 
-  const renderPerformancePage = () => (
-    <section className="work-page-grid pro-page-grid">
-      <article className="dashboard-panel work-main">
-        <div className="panel-header panel-header-strong">
-          <h3>{user.role === 'teacher' ? 'Class Analytics' : 'Your Grades'}</h3>
-        </div>
-        <div className="pro-cards-grid">
-          {gradesData.length > 0 ? (
-            gradesData.map((grade) => (
-              <div className="pro-grade-card" key={grade._id || grade.class}>
-                <div className="pro-card-head">
-                  <div>
-                    <h4>{grade.class?.subject || 'Class'}</h4>
-                    <p>Internals: {grade.internals} · Finals: {grade.finals}</p>
-                  </div>
-                  <span className={`pill ${grade.grade === 'A' ? 'progress' : grade.grade === 'B' ? 'todo' : 'pending'}`}>Grade {grade.grade}</span>
-                </div>
-                <div className="progress-track compact">
-                  <span style={{ width: `${Math.max(Math.round((Number(grade.internals || 0) + Number(grade.finals || 0)) / 2), 8)}%` }}></span>
-                </div>
-                {user.role === 'teacher' && (
-                  <div className="pro-card-actions">
-                    <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveGrade(grade._id)}>Remove</button>
-                  </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <div className="dashboard-list-item">
-              <div>
-                <h4>No grades yet</h4>
-                <p>Grades will appear once they are assigned.</p>
-              </div>
-              <span className="pill todo">Empty</span>
-            </div>
-          )}
-        </div>
-      </article>
+  const renderPerformancePage = () => {
+    const blendedGrowth = Math.max(Math.round((gradeOverview.average + attendanceOverview.rate) / 2), 0)
 
-      <article className="dashboard-panel work-side">
-        <div className="panel-header panel-header-strong">
-          <h3>{user.role === 'teacher' ? 'Performance Summary' : 'Student Insights'}</h3>
-        </div>
-        <div className="compact-kpi-list">
-          <div className="compact-kpi-item">
-            <span>Tracked Classes</span>
-            <strong>{gradesData.length}</strong>
+    return (
+      <section className="work-page-grid pro-page-grid performance-page-grid">
+        <article className="dashboard-panel work-main performance-main-panel">
+          <div className="panel-header panel-header-strong">
+            <h3>{activePage === 'analytics' ? 'Smart Classroom Analytics' : (user.role === 'teacher' ? 'Class Analytics' : 'Your Grades')}</h3>
           </div>
-          <div className="compact-kpi-item">
-            <span>Average Score</span>
-            <strong>{gradesData.length > 0 ? `${gradeOverview.average}%` : 'N/A'}</strong>
-          </div>
-          <div className="compact-kpi-item">
-            <span>Attendance Link</span>
-            <strong>{attendanceOverview.rate}%</strong>
-          </div>
-        </div>
-        <div className="distribution-list">
-          {Object.entries(gradeOverview.distribution).length > 0 ? Object.entries(gradeOverview.distribution).map(([label, value]) => (
-            <div className="distribution-item" key={label}>
-              <span>{label}</span>
-              <div className="progress-track compact">
-                <span style={{ width: `${Math.max(Math.round((value / gradesData.length) * 100), 6)}%` }}></span>
-              </div>
-              <strong>{value}</strong>
+
+          <div className="performance-hero-row">
+            <div className="performance-hero-card">
+              <span>Blended Growth</span>
+              <strong>{blendedGrowth}%</strong>
+              <small className="small-muted">Grade + attendance combined</small>
             </div>
-          )) : (
-            <p className="small-muted">Grade distribution will appear after evaluations.</p>
-          )}
-        </div>
-        <div className="progress-summary-card">
-          <p>Real-life Progress Signal</p>
-          <div className="progress-track">
-            <span style={{ width: `${Math.max(Math.round((gradeOverview.average + attendanceOverview.rate) / 2), 10)}%` }}></span>
+            <div className="performance-hero-card">
+              <span>Attendance Stability</span>
+              <strong>{attendanceOverview.rate}%</strong>
+              <small className="small-muted">Live classroom consistency</small>
+            </div>
           </div>
-          <strong>{Math.max(Math.round((gradeOverview.average + attendanceOverview.rate) / 2), 0)}% blended growth</strong>
-          <small className="small-muted">Score + attendance weighted for practical progress visibility.</small>
-        </div>
-      </article>
-    </section>
-  )
+
+          <div className="pro-cards-grid performance-grade-grid">
+            {gradesData.length > 0 ? (
+              gradesData.map((grade) => {
+                const score = Math.max(Math.round((Number(grade.internals || 0) + Number(grade.finals || 0)) / 2), 8)
+                return (
+                  <div className="pro-grade-card" key={grade._id || grade.class}>
+                    <div className="pro-card-head">
+                      <div>
+                        <h4>{grade.class?.subject || 'Class'}</h4>
+                        <p>Internals: {grade.internals} · Finals: {grade.finals}</p>
+                      </div>
+                      <span className={`pill ${grade.grade === 'A' ? 'progress' : grade.grade === 'B' ? 'todo' : 'pending'}`}>Grade {grade.grade}</span>
+                    </div>
+                    <div className="progress-track compact">
+                      <span style={{ width: `${score}%` }}></span>
+                    </div>
+                    <small>Overall score: {score}%</small>
+                    {user.role === 'teacher' && (
+                      <div className="pro-card-actions">
+                        <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveGrade(grade._id)}>Remove</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            ) : (
+              <div className="performance-empty-card">
+                <div>
+                  <h4>No grades available yet</h4>
+                  <p>Add evaluations to unlock full analytics, predictions, and subject-wise progress intelligence.</p>
+                </div>
+                <div className="performance-empty-actions">
+                  <button className="panel-add" type="button" onClick={() => setActivePage('assignments')}>Open Assignments</button>
+                  <button className="panel-add" type="button" onClick={() => setActivePage('attendance')}>Open Attendance</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {activePage === 'analytics' && (
+            <div className="analytics-ai-board performance-ai-board">
+              <h4>AI Powered Actions</h4>
+              <div className="analytics-ai-grid">
+                {effectiveAiInsights.slice(0, 3).map((item, index) => (
+                  <div className="analytics-ai-card" key={`analytics-ai-${index}`}>
+                    <strong>{item.title}</strong>
+                    <p>{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </article>
+
+        <article className="dashboard-panel work-side performance-side-panel">
+          <div className="panel-header panel-header-strong">
+            <h3>{user.role === 'teacher' ? 'Performance Summary' : 'Student Insights'}</h3>
+          </div>
+          <div className="compact-kpi-list performance-kpi-list">
+            <div className="compact-kpi-item">
+              <span>Tracked Classes</span>
+              <strong>{gradesData.length}</strong>
+            </div>
+            <div className="compact-kpi-item">
+              <span>Average Score</span>
+              <strong>{gradesData.length > 0 ? `${gradeOverview.average}%` : 'N/A'}</strong>
+            </div>
+            <div className="compact-kpi-item">
+              <span>Attendance Link</span>
+              <strong>{attendanceOverview.rate}%</strong>
+            </div>
+          </div>
+
+          <div className="distribution-list performance-distribution">
+            {Object.entries(gradeOverview.distribution).length > 0 ? Object.entries(gradeOverview.distribution).map(([label, value]) => (
+              <div className="distribution-item" key={label}>
+                <span>{label}</span>
+                <div className="progress-track compact">
+                  <span style={{ width: `${Math.max(Math.round((value / gradesData.length) * 100), 6)}%` }}></span>
+                </div>
+                <strong>{value}</strong>
+              </div>
+            )) : (
+              <p className="small-muted">Grade distribution will appear after evaluations.</p>
+            )}
+          </div>
+
+          <div className="progress-summary-card performance-progress-card">
+            <p>Real-life Progress Signal</p>
+            <div className="progress-track">
+              <span style={{ width: `${Math.max(blendedGrowth, 10)}%` }}></span>
+            </div>
+            <strong>{blendedGrowth}% blended growth</strong>
+            <small className="small-muted">Score + attendance weighted for practical progress visibility.</small>
+          </div>
+
+          {user.role === 'teacher' ? (
+            <div className="risk-list performance-coach-list">
+              <h4>Intervention Queue</h4>
+              {atRiskStudents.length > 0 ? (
+                atRiskStudents.map((student) => (
+                  <div className="risk-item" key={`risk-${student.studentId || student.email}`}>
+                    <div>
+                      <strong>{student.name}</strong>
+                      <p>{student.email}</p>
+                    </div>
+                    <span className="pill pending">{student.attendanceRate}%</span>
+                  </div>
+                ))
+              ) : (
+                <p className="small-muted">No critical learners flagged. Continue current plan.</p>
+              )}
+            </div>
+          ) : (
+            <div className="risk-list performance-coach-list">
+              <h4>AI Study Coach</h4>
+              {studentActionPlan.map((line, index) => (
+                <div className="risk-item" key={`plan-${index}`}>
+                  <p>{line}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+      </section>
+    )
+  }
 
   const profileActions = user.role === 'teacher'
     ? [
@@ -4195,16 +4505,20 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
                     <button className="panel-add" type="button" onClick={() => markNotificationsRead(null)}>Mark all read</button>
                   </div>
                   <div className="notification-list">
-                    {visibleNotifications.length > 0 ? (
-                      visibleNotifications.slice(0, 8).map((item) => (
+                    {highlightedNotifications.length > 0 ? (
+                      highlightedNotifications.slice(0, 8).map((item) => (
                         <button
                           key={item._id || `${item.title}-${item.createdAt}`}
                           type="button"
-                          className={`notification-item ${item.readAt ? 'read' : ''}`}
+                          className={`notification-item ${item.readAt ? 'read' : ''} ${item.isHighlighted ? 'highlight' : ''}`}
                           onClick={() => markNotificationsRead(item._id)}
                         >
                           <strong>{item.title}</strong>
                           <p>{item.message}</p>
+                          <span className="notification-item-meta">
+                            {(item?.metadata?.channel || item?.type || 'system').toString().toUpperCase()}
+                            {item?.metadata?.priority ? ` · ${String(item.metadata.priority).toUpperCase()}` : ''}
+                          </span>
                           <small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'now'}</small>
                         </button>
                       ))
