@@ -16,11 +16,17 @@ const app = express()
 const PORT = process.env.PORT || 5000
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173'
+const FRONTEND_ORIGINS = String(process.env.FRONTEND_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/edutrack'
 const GLOBAL_MULTI_CLASS_CODE = 'BTECH-MULTI-2026'
 const AI_API_URL = process.env.AI_API_URL || ''
 const AI_API_KEY = process.env.AI_API_KEY || ''
 const AUTO_SEED_ON_EMPTY_DB = String(process.env.AUTO_SEED_ON_EMPTY_DB || 'true').toLowerCase() !== 'false'
+const REQUIRE_MONGO_IN_PROD = String(process.env.REQUIRE_MONGO_IN_PROD || 'true').toLowerCase() !== 'false'
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const uploadsDir = path.join(__dirname, 'uploads')
@@ -42,6 +48,7 @@ const upload = multer({
 
 const allowedOrigins = [
   FRONTEND_ORIGIN,
+  ...FRONTEND_ORIGINS,
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
@@ -4105,6 +4112,11 @@ async function startServer() {
   } catch (error) {
     console.warn(`Mongo connection failed, falling back to in-memory storage: ${error.message}`)
     mongoReady = false
+  }
+
+  if (IS_PRODUCTION && REQUIRE_MONGO_IN_PROD && !mongoReady) {
+    console.error('MongoDB connection is required in production. Refusing to start without persistent database.')
+    process.exit(1)
   }
 
   try {
