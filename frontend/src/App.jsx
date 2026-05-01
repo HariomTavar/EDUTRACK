@@ -750,15 +750,6 @@ function App() {
               <span className="google-mark" aria-hidden="true">G</span>
               Continue with Google
             </button>
-            <div className="auth-server-status" role="status" aria-live="polite">
-              {authServerHealth.checking
-                ? 'Checking backend connection...'
-                : authServerHealth.ok === false
-                  ? 'Backend offline'
-                  : authServerHealth.ok === true
-                    ? 'Backend online'
-                    : 'Connection status unknown'}
-            </div>
             {authError && <p className="auth-feedback auth-error">{authError}</p>}
             {authSuccess && <p className="auth-feedback auth-success">{authSuccess}</p>}
             <form className="auth-form" onSubmit={handleAuthSubmit} autoComplete="off">
@@ -880,6 +871,7 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     longitude: '',
   }))
   const [selectedAttendanceSubject, setSelectedAttendanceSubject] = useState('ALL')
+  const [attendanceViewMode, setAttendanceViewMode] = useState('chart') // 'chart' or 'cards'
   const [selectedClassId, setSelectedClassId] = useState('')
   const [studentRosterForm, setStudentRosterForm] = useState({ email: '' })
   const [rosterActionState, setRosterActionState] = useState({ loading: false, error: '', success: '' })
@@ -2547,6 +2539,43 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     }
   }, [gradesData])
 
+  const subjectWiseAttendance = useMemo(() => {
+    const subjectMap = {}
+
+    attendanceData.forEach((record) => {
+      const subject = normalizeSubjectLabel(record?.class?.subject)
+      if (!subject) return
+
+      if (!subjectMap[subject]) {
+        subjectMap[subject] = {
+          subject,
+          classId: record?.class?._id,
+          totalSessions: 0,
+          present: 0,
+          late: 0,
+          absent: 0,
+          total: 0,
+          percentage: 0,
+        }
+      }
+
+      const records = Array.isArray(record.records) ? record.records : []
+      subjectMap[subject].totalSessions += 1
+      subjectMap[subject].total += records.length
+      subjectMap[subject].present += records.filter((r) => r.status === 'present').length
+      subjectMap[subject].late += records.filter((r) => r.status === 'late').length
+      subjectMap[subject].absent += records.filter((r) => r.status === 'absent').length
+    })
+
+    const result = Object.values(subjectMap).map((item) => ({
+      ...item,
+      percentage: item.total > 0 ? Math.round((item.present / item.total) * 100) : 0,
+      presentPercentage: item.total > 0 ? Math.round((item.present / item.total) * 100) : 0,
+    }))
+
+    return result.sort((a, b) => a.subject.localeCompare(b.subject))
+  }, [attendanceData])
+
   const atRiskStudents = useMemo(() => {
     if (user.role !== 'teacher') {
       return []
@@ -3773,54 +3802,196 @@ function DashboardShell({ user, token, dashboardItems, dashboardHighlights, onLo
     <section className="work-page-grid pro-page-grid">
       <article className="dashboard-panel work-main">
         <div className="panel-header panel-header-strong">
-          <h3>Attendance Records</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+            <h3>Attendance Records</h3>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                className={`class-switcher-pill ${attendanceViewMode === 'chart' ? 'active' : ''}`}
+                type="button"
+                onClick={() => setAttendanceViewMode('chart')}
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+              >
+                📊 Chart View
+              </button>
+              <button
+                className={`class-switcher-pill ${attendanceViewMode === 'cards' ? 'active' : ''}`}
+                type="button"
+                onClick={() => setAttendanceViewMode('cards')}
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+              >
+                🗂️ List View
+              </button>
+            </div>
+          </div>
           {user.role === 'teacher' && <button className="panel-add" type="button" onClick={openAttendanceModal}>+ Mark Attendance</button>}
         </div>
-        <div className="class-switcher" style={{ marginTop: '0.6rem' }}>
-          {attendanceSubjects.map((subject) => (
-            <button
-              key={subject}
-              type="button"
-              className={`class-switcher-pill ${selectedAttendanceSubject === subject ? 'active' : ''}`}
-              onClick={() => setSelectedAttendanceSubject(subject)}
-            >
-              {subject === 'ALL' ? 'All Subjects' : subject}
-            </button>
-          ))}
-        </div>
-        <div className="pro-cards-grid">
-          {filteredAttendanceData.length > 0 ? (
-            filteredAttendanceData.map((record) => (
-              <div className="pro-attendance-card" key={record._id || record.date}>
-                <div className="pro-card-head">
+
+        {attendanceViewMode === 'chart' ? (
+          <>
+            <div style={{ marginTop: '0.8rem', overflowX: 'auto' }}>
+              {subjectWiseAttendance.length > 0 ? (
+                <>
+                  <table style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    fontSize: '0.9rem',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border)',
+                    overflow: 'hidden',
+                    backgroundColor: '#ffffff'
+                  }}>
+                    <thead>
+                      <tr style={{
+                        backgroundColor: '#f8fafc',
+                        borderBottom: '2px solid var(--border)',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.05em',
+                        color: 'var(--text-secondary)'
+                      }}>
+                        <th style={{ padding: '0.8rem', textAlign: 'left' }}>Subject Name</th>
+                        <th style={{ padding: '0.8rem', textAlign: 'center' }}>Total Classes</th>
+                        <th style={{ padding: '0.8rem', textAlign: 'center' }}>Present</th>
+                        <th style={{ padding: '0.8rem', textAlign: 'center' }}>Late</th>
+                        <th style={{ padding: '0.8rem', textAlign: 'center' }}>Absent</th>
+                        <th style={{ padding: '0.8rem', textAlign: 'center' }}>Attendance %</th>
+                        <th style={{ padding: '0.8rem', textAlign: 'left' }}>Progress</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subjectWiseAttendance.map((item, idx) => {
+                        const progressColor = item.percentage >= 85 ? '#10b981' : item.percentage >= 75 ? '#f59e0b' : '#ef4444'
+                        return (
+                          <tr key={idx} style={{
+                            borderBottom: '1px solid var(--border)',
+                            transition: 'background-color 0.22s ease'
+                          }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f9fafb' }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}>
+                            <td style={{ padding: '0.8rem', fontWeight: '600' }}>{item.subject}</td>
+                            <td style={{ padding: '0.8rem', textAlign: 'center', color: 'var(--text-secondary)' }}>{item.totalSessions}</td>
+                            <td style={{ padding: '0.8rem', textAlign: 'center', color: '#10b981', fontWeight: '600' }}>{item.present}</td>
+                            <td style={{ padding: '0.8rem', textAlign: 'center', color: '#f59e0b', fontWeight: '600' }}>{item.late}</td>
+                            <td style={{ padding: '0.8rem', textAlign: 'center', color: '#ef4444', fontWeight: '600' }}>{item.absent}</td>
+                            <td style={{ padding: '0.8rem', textAlign: 'center' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                backgroundColor: progressColor,
+                                color: 'white',
+                                padding: '0.3rem 0.6rem',
+                                borderRadius: '6px',
+                                fontWeight: '700',
+                                fontSize: '0.8rem'
+                              }}>
+                                {item.percentage}%
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.8rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                <div style={{
+                                  width: '100%',
+                                  height: '8px',
+                                  backgroundColor: '#e5e7eb',
+                                  borderRadius: '4px',
+                                  overflow: 'hidden',
+                                  minWidth: '80px'
+                                }}>
+                                  <div style={{
+                                    height: '100%',
+                                    width: `${item.percentage}%`,
+                                    backgroundColor: progressColor,
+                                    transition: 'width 0.4s ease',
+                                    borderRadius: '4px'
+                                  }}></div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  <div style={{ marginTop: '1.2rem', padding: '1rem', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                    <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.95rem' }}>Summary Statistics</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.8rem' }}>
+                      <div style={{ padding: '0.8rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                        <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Total Subjects</small>
+                        <strong style={{ fontSize: '1.3rem', color: 'var(--text-primary)' }}>{subjectWiseAttendance.length}</strong>
+                      </div>
+                      <div style={{ padding: '0.8rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                        <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Total Classes</small>
+                        <strong style={{ fontSize: '1.3rem', color: 'var(--text-primary)' }}>{subjectWiseAttendance.reduce((sum, item) => sum + item.totalSessions, 0)}</strong>
+                      </div>
+                      <div style={{ padding: '0.8rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                        <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Total Present</small>
+                        <strong style={{ fontSize: '1.3rem', color: '#10b981' }}>{subjectWiseAttendance.reduce((sum, item) => sum + item.present, 0)}</strong>
+                      </div>
+                      <div style={{ padding: '0.8rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                        <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Overall Rate</small>
+                        <strong style={{ fontSize: '1.3rem', color: attendanceOverview.rate >= 85 ? '#10b981' : attendanceOverview.rate >= 75 ? '#f59e0b' : '#ef4444' }}>{attendanceOverview.rate}%</strong>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="dashboard-list-item" style={{ marginTop: '1rem' }}>
                   <div>
-                    <h4>{normalizeSubjectLabel(record.class?.subject)}</h4>
-                    <p>{new Date(record.date).toLocaleDateString()}</p>
+                    <h4>No attendance records</h4>
+                    <p>Attendance records will appear here.</p>
                   </div>
-                  <span className="pill progress">{record.records?.length || 0} learners</span>
+                  <span className="pill todo">Empty</span>
                 </div>
-                <div className="attendance-row-stats">
-                  <small>P: {record.records?.filter((r) => r.status === 'present').length || 0}</small>
-                  <small>L: {record.records?.filter((r) => r.status === 'late').length || 0}</small>
-                  <small>A: {record.records?.filter((r) => r.status === 'absent').length || 0}</small>
-                </div>
-                {user.role === 'teacher' && (
-                  <div className="pro-card-actions">
-                    <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveAttendance(record._id)}>Remove</button>
-                  </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <div className="dashboard-list-item">
-              <div>
-                <h4>No attendance records</h4>
-                <p>Attendance records will appear here.</p>
-              </div>
-              <span className="pill todo">Empty</span>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          <>
+            <div className="class-switcher" style={{ marginTop: '0.6rem' }}>
+              {attendanceSubjects.map((subject) => (
+                <button
+                  key={subject}
+                  type="button"
+                  className={`class-switcher-pill ${selectedAttendanceSubject === subject ? 'active' : ''}`}
+                  onClick={() => setSelectedAttendanceSubject(subject)}
+                >
+                  {subject === 'ALL' ? 'All Subjects' : subject}
+                </button>
+              ))}
+            </div>
+            <div className="pro-cards-grid">
+              {filteredAttendanceData.length > 0 ? (
+                filteredAttendanceData.map((record) => (
+                  <div className="pro-attendance-card" key={record._id || record.date}>
+                    <div className="pro-card-head">
+                      <div>
+                        <h4>{normalizeSubjectLabel(record.class?.subject)}</h4>
+                        <p>{new Date(record.date).toLocaleDateString()}</p>
+                      </div>
+                      <span className="pill progress">{record.records?.length || 0} learners</span>
+                    </div>
+                    <div className="attendance-row-stats">
+                      <small>P: {record.records?.filter((r) => r.status === 'present').length || 0}</small>
+                      <small>L: {record.records?.filter((r) => r.status === 'late').length || 0}</small>
+                      <small>A: {record.records?.filter((r) => r.status === 'absent').length || 0}</small>
+                    </div>
+                    {user.role === 'teacher' && (
+                      <div className="pro-card-actions">
+                        <button className="panel-add panel-remove" type="button" onClick={() => handleRemoveAttendance(record._id)}>Remove</button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="dashboard-list-item">
+                  <div>
+                    <h4>No attendance records</h4>
+                    <p>Attendance records will appear here.</p>
+                  </div>
+                  <span className="pill todo">Empty</span>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </article>
 
       <article className="dashboard-panel work-side">
